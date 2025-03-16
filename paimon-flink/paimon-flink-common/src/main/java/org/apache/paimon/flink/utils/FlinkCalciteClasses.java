@@ -204,6 +204,22 @@ public class FlinkCalciteClasses {
             return clazz.getField("IS_NOT_NULL").get(null);
         }
 
+        public Object isTrue() throws NoSuchFieldException, IllegalAccessException {
+            return clazz.getField("IS_TRUE").get(null);
+        }
+
+        public Object isNotTrue() throws NoSuchFieldException, IllegalAccessException {
+            return clazz.getField("IS_NOT_TRUE").get(null);
+        }
+
+        public Object isFalse() throws NoSuchFieldException, IllegalAccessException {
+            return clazz.getField("IS_FALSE").get(null);
+        }
+
+        public Object isNotFalse() throws NoSuchFieldException, IllegalAccessException {
+            return clazz.getField("IS_NOT_FALSE").get(null);
+        }
+
         public Object not() throws NoSuchFieldException, IllegalAccessException {
             return clazz.getField("NOT").get(null);
         }

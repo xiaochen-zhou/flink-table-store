@@ -21,6 +21,7 @@ package org.apache.paimon.predicate;
 import org.apache.paimon.data.GenericArray;
 import org.apache.paimon.data.GenericRow;
 import org.apache.paimon.format.SimpleColStats;
+import org.apache.paimon.types.DataTypes;
 import org.apache.paimon.types.IntType;
 import org.apache.paimon.types.RowType;
 import org.apache.paimon.types.VarCharType;
@@ -72,6 +73,70 @@ public class PredicateTest {
         assertThat(test(predicate, 1, new SimpleColStats[] {new SimpleColStats(null, null, 1L)}))
                 .isEqualTo(false);
     }
+
+//    public void testIsBoolean() {
+//        PredicateBuilder builder = new PredicateBuilder(RowType.of(new IntType()));
+//        Predicate predicate = builder.notEqual(0, 5);
+//
+//        CallExpression expression =
+//                call(
+//                        BuiltInFunctionDefinitions,
+//                        call(
+//                                BuiltInFunctionDefinitions.EQUALS,
+//                                field(0, DataTypes.INT()),
+//                                literal(3)),
+//                        call(
+//                                BuiltInFunctionDefinitions.SIMILAR,
+//                                field(1, DataTypes.INT()),
+//                                literal(5)));
+//        assertThatThrownBy(
+//                () ->
+//                        expression.accept(
+//                                new PredicateConverter(
+//                                        RowType.of(new IntType(), new IntType()))))
+//                .isInstanceOf(PredicateConverter.UnsupportedExpression.class);
+//
+//
+//        assertThat(predicate.test(GenericRow.of(4))).isEqualTo(true);
+//        assertThat(predicate.test(GenericRow.of(5))).isEqualTo(false);
+//        assertThat(predicate.test(GenericRow.of((Object) null))).isEqualTo(false);
+//
+//        assertThat(test(predicate, 3, new SimpleColStats[] {new SimpleColStats(0, 5, 0L)}))
+//                .isEqualTo(true);
+//        assertThat(test(predicate, 3, new SimpleColStats[] {new SimpleColStats(0, 6, 0L)}))
+//                .isEqualTo(true);
+//        assertThat(test(predicate, 3, new SimpleColStats[] {new SimpleColStats(6, 7, 0L)}))
+//                .isEqualTo(true);
+//        assertThat(test(predicate, 1, new SimpleColStats[] {new SimpleColStats(5, 5, 0L)}))
+//                .isEqualTo(false);
+//        assertThat(test(predicate, 1, new SimpleColStats[] {new SimpleColStats(null, null, 1L)}))
+//                .isEqualTo(false);
+//
+//        assertThat(predicate.negate().orElse(null)).isEqualTo(builder.equal(0, 5));
+//    }
+//
+//    public void testNotBoolean() {
+//        PredicateBuilder builder = new PredicateBuilder(RowType.of(new IntType()));
+//        Predicate predicate = builder.notEqual(0, 5);
+//
+//        assertThat(predicate.test(GenericRow.of(4))).isEqualTo(true);
+//        assertThat(predicate.test(GenericRow.of(5))).isEqualTo(false);
+//        assertThat(predicate.test(GenericRow.of((Object) null))).isEqualTo(false);
+//
+//        assertThat(test(predicate, 3, new SimpleColStats[] {new SimpleColStats(0, 5, 0L)}))
+//                .isEqualTo(true);
+//        assertThat(test(predicate, 3, new SimpleColStats[] {new SimpleColStats(0, 6, 0L)}))
+//                .isEqualTo(true);
+//        assertThat(test(predicate, 3, new SimpleColStats[] {new SimpleColStats(6, 7, 0L)}))
+//                .isEqualTo(true);
+//        assertThat(test(predicate, 1, new SimpleColStats[] {new SimpleColStats(5, 5, 0L)}))
+//                .isEqualTo(false);
+//        assertThat(test(predicate, 1, new SimpleColStats[] {new SimpleColStats(null, null, 1L)}))
+//                .isEqualTo(false);
+//
+//        assertThat(predicate.negate().orElse(null)).isEqualTo(builder.equal(0, 5));
+//    }
+
 
     @Test
     public void testNotEqual() {

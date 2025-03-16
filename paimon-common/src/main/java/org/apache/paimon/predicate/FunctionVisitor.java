@@ -66,6 +66,10 @@ public interface FunctionVisitor<T> extends PredicateVisitor<T> {
 
     T visitGreaterThan(FieldRef fieldRef, Object literal);
 
+    T visitIsNotBoolean(List<T> children);
+
+    T visitIsBoolean(List<T> children);
+
     // ----------------- Other functions ------------------------
 
     T visitIn(FieldRef fieldRef, List<Object> literals);
@@ -77,4 +81,5 @@ public interface FunctionVisitor<T> extends PredicateVisitor<T> {
     T visitAnd(List<T> children);
 
     T visitOr(List<T> children);
+
 }

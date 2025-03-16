@@ -104,6 +104,22 @@ public class PredicateBuilder {
         return leaf(IsNotNull.INSTANCE, idx);
     }
 
+    public Predicate isFalse(int idx) {
+        return leaf(IsTrue.INSTANCE, idx);
+    }
+
+    public Predicate isTrue(int idx) {
+        return leaf(IsTrue.INSTANCE, idx);
+    }
+
+    public Predicate isBoolean(int idx) {
+        return leaf(IsTrue.INSTANCE, idx);
+    }
+
+    public Predicate isNotBoolean(int idx) {
+        return leaf(IsNotBoolean.INSTANCE, idx);
+    }
+
     public Predicate startsWith(int idx, Object patternLiteral) {
         return leaf(StartsWith.INSTANCE, idx, patternLiteral);
     }

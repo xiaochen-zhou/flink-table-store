@@ -23,6 +23,8 @@ import org.apache.paimon.predicate.PredicateBuilder;
 import org.apache.paimon.types.DataType;
 import org.apache.paimon.types.RowType;
 
+import org.apache.spark.sql.sources.AlwaysFalse;
+import org.apache.spark.sql.sources.AlwaysTrue;
 import org.apache.spark.sql.sources.And;
 import org.apache.spark.sql.sources.EqualNullSafe;
 import org.apache.spark.sql.sources.EqualTo;
@@ -172,6 +174,17 @@ public class SparkFilterConverter {
             Object literal = convertLiteral(index, contains.value());
             return builder.contains(index, literal);
         }
+//        else if (filter instanceof AlwaysFalse) {
+//            AlwaysFalse alwaysFalse = (AlwaysFalse) filter;
+//            int index = fieldIndex(alwaysFalse.attribute());
+//            Object literal = convertLiteral(index, contains.value());
+//            return builder.isFalse(index, literal);
+//        }else if (filter instanceof AlwaysTrue) {
+//            AlwaysTrue alwaysTrue = (AlwaysTrue) filter;
+//            int index = fieldIndex(contains.attribute());
+//            Object literal = convertLiteral(index, contains.value());
+//            return builder.isTrue(index, literal);
+//        }
 
         // TODO: AlwaysTrue, AlwaysFalse
         throw new UnsupportedOperationException(

@@ -103,6 +103,12 @@ public class SimpleSqlPredicateConvertor {
             } else if (kind == calciteClasses.sqlKindDelegate().isNotNull()) {
                 String field = String.valueOf(child);
                 return builder.isNotNull(getFieldIndex(field));
+            } else if (kind == calciteClasses.sqlKindDelegate().isTrue() || kind == calciteClasses.sqlKindDelegate().isFalse()) {
+                String field = String.valueOf(child);
+                return builder.isBoolean(getFieldIndex(field));
+            } else if (kind == calciteClasses.sqlKindDelegate().isNotTrue() || kind == calciteClasses.sqlKindDelegate().isNotFalse()) {
+                String field = String.valueOf(child);
+                return builder.isNotBoolean(getFieldIndex(field));
             }
         } else if (calciteClasses.sqlOperatorDelegate().instanceOfSqlPrefixOperator(operator)) {
             if (kind == calciteClasses.sqlKindDelegate().not()) {
