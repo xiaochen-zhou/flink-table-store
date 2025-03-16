@@ -244,7 +244,13 @@ public class PredicateConverterTest {
                                 BuiltInFunctionDefinitions.EQUALS,
                                 Arrays.asList(stringLitExpr2, stringRefExpr),
                                 DataTypes.STRING()),
-                        BUILDER.equal(2, BinaryString.fromString("haha"))));
+                        BUILDER.equal(2, BinaryString.fromString("haha"))),
+                Arguments.of(
+                        CallExpression.permanent(
+                                BuiltInFunctionDefinitions.BETWEEN,
+                                Arrays.asList(intLitExpr, intLitExpr2),
+                                DataTypes.BOOLEAN()),
+                        BUILDER.between(0, 10, 20)));
     }
 
     @MethodSource("provideLikeExpressions")
