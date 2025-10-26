@@ -193,6 +193,7 @@ Run the following command:
     --warehouse <warehouse-path> \
     --database <database-name> \
     --table <table-name> \
+    --branch <branch-name> \
     --tag_name <tag-name> \
     [--catalog_conf <paimon-catalog-conf> [--catalog_conf <paimon-catalog-conf> ...]]
 ```

@@ -23,6 +23,7 @@ import org.apache.paimon.catalog.Catalog;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.utils.SnapshotManager;
 import org.apache.paimon.utils.SnapshotNotExistException;
+import org.apache.paimon.utils.StringUtils;
 import org.apache.paimon.utils.TimeUtils;
 
 import org.apache.flink.table.annotation.ArgumentHint;
@@ -50,16 +51,21 @@ public class CreateTagFromWatermarkProcedure extends ProcedureBase {
                         name = "time_retained",
                         type = @DataTypeHint("STRING"),
                         isOptional = true),
+                @ArgumentHint(name = "branch", type = @DataTypeHint("STRING"), isOptional = true),
             })
     @DataTypeHint("ROW< tagName STRING, snapshot BIGINT, `commit_time` BIGINT, `watermark` STRING>")
     public Row[] call(
             ProcedureContext procedureContext,
             String tableId,
+            String branchName,
             String tagName,
             Long watermark,
             @Nullable String timeRetained)
             throws Catalog.TableNotExistException {
         FileStoreTable fileStoreTable = (FileStoreTable) table(tableId);
+        if (StringUtils.isNotEmpty(branchName)) {
+            fileStoreTable = fileStoreTable.switchToBranch(branchName);
+        }
         SnapshotManager snapshotManager = fileStoreTable.snapshotManager();
 
         Snapshot snapshot = snapshotManager.laterOrEqualWatermark(watermark);

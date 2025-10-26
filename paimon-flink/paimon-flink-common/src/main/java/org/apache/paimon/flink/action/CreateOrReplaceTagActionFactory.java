@@ -30,6 +30,7 @@ public abstract class CreateOrReplaceTagActionFactory implements ActionFactory {
     private static final String TAG_NAME = "tag_name";
     private static final String SNAPSHOT = "snapshot";
     private static final String TIME_RETAINED = "time_retained";
+    private static final String BRANCH_NAME = "branch_name";
 
     @Override
     public Optional<Action> create(MultipleParameterToolAdapter params) {
@@ -46,6 +47,11 @@ public abstract class CreateOrReplaceTagActionFactory implements ActionFactory {
             timeRetained = TimeUtils.parseDuration(params.get(TIME_RETAINED));
         }
 
+        String branchName = null;
+        if (params.has(BRANCH_NAME)) {
+            branchName = params.getRequired(TAG_NAME);
+        }
+
         return Optional.of(
                 createOrReplaceTagAction(
                         params.getRequired(DATABASE),
@@ -53,7 +59,8 @@ public abstract class CreateOrReplaceTagActionFactory implements ActionFactory {
                         catalogConfig,
                         tagName,
                         snapshot,
-                        timeRetained));
+                        timeRetained,
+                        branchName));
     }
 
     abstract Action createOrReplaceTagAction(
@@ -62,5 +69,6 @@ public abstract class CreateOrReplaceTagActionFactory implements ActionFactory {
             Map<String, String> catalogConfig,
             String tagName,
             Long snapshot,
-            Duration timeRetained);
+            Duration timeRetained,
+            String branchName);
 }

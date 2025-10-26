@@ -27,6 +27,7 @@ import java.time.Duration;
  *
  * <pre><code>
  *  CALL sys.create_tag('tableId', 'tagName', snapshotId, 'timeRetained')
+ *  CALL sys.create_tag('tableId', 'tagName', snapshotId, 'timeRetained', 'branchName')
  * </code></pre>
  */
 public class CreateTagProcedure extends CreateOrReplaceTagBaseProcedure {

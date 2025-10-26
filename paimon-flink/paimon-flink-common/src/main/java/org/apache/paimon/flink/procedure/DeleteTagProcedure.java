@@ -19,8 +19,8 @@
 package org.apache.paimon.flink.procedure;
 
 import org.apache.paimon.catalog.Catalog;
-import org.apache.paimon.catalog.Identifier;
-import org.apache.paimon.table.Table;
+import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.utils.StringUtils;
 
 import org.apache.flink.table.annotation.ArgumentHint;
 import org.apache.flink.table.annotation.DataTypeHint;
@@ -32,6 +32,7 @@ import org.apache.flink.table.procedure.ProcedureContext;
  *
  * <pre><code>
  *  CALL sys.delete_tag('tableId', 'tagName')
+ *  CALL sys.delete_tag('tableId', 'tagName', 'branchName')
  * </code></pre>
  */
 public class DeleteTagProcedure extends ProcedureBase {
@@ -41,11 +42,16 @@ public class DeleteTagProcedure extends ProcedureBase {
     @ProcedureHint(
             argument = {
                 @ArgumentHint(name = "table", type = @DataTypeHint("STRING")),
-                @ArgumentHint(name = "tag", type = @DataTypeHint("STRING"))
+                @ArgumentHint(name = "tag", type = @DataTypeHint("STRING")),
+                @ArgumentHint(name = "branch", type = @DataTypeHint("STRING"), isOptional = true),
             })
-    public String[] call(ProcedureContext procedureContext, String tableId, String tagNameStr)
+    public String[] call(
+            ProcedureContext procedureContext, String branchName, String tableId, String tagNameStr)
             throws Catalog.TableNotExistException {
-        Table table = catalog.getTable(Identifier.fromString(tableId));
+        FileStoreTable table = (FileStoreTable) table(tableId);
+        if (StringUtils.isNotEmpty(branchName)) {
+            table = table.switchToBranch(branchName);
+        }
         table.deleteTags(tagNameStr);
         return new String[] {"Success"};
     }

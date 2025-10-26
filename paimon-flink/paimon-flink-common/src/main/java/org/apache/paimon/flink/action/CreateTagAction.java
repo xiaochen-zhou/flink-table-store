@@ -18,6 +18,9 @@
 
 package org.apache.paimon.flink.action;
 
+import org.apache.paimon.table.FileStoreTable;
+import org.apache.paimon.utils.StringUtils;
+
 import javax.annotation.Nullable;
 
 import java.time.Duration;
@@ -29,6 +32,7 @@ public class CreateTagAction extends TableActionBase implements LocalAction {
     private final String tagName;
     private final @Nullable Long snapshotId;
     private final @Nullable Duration timeRetained;
+    private final @Nullable String branchName;
 
     public CreateTagAction(
             String databaseName,
@@ -36,15 +40,21 @@ public class CreateTagAction extends TableActionBase implements LocalAction {
             Map<String, String> catalogConfig,
             String tagName,
             @Nullable Long snapshotId,
-            @Nullable Duration timeRetained) {
+            @Nullable Duration timeRetained,
+            @Nullable String branchName) {
         super(databaseName, tableName, catalogConfig);
         this.tagName = tagName;
         this.timeRetained = timeRetained;
         this.snapshotId = snapshotId;
+        this.branchName = branchName;
     }
 
     @Override
     public void executeLocally() {
+
+        if (StringUtils.isNotEmpty(branchName)) {
+            table = ((FileStoreTable) table).switchToBranch(branchName);
+        }
         if (snapshotId == null) {
             table.createTag(tagName, timeRetained);
         } else {

@@ -19,8 +19,9 @@
 package org.apache.paimon.flink.procedure;
 
 import org.apache.paimon.catalog.Catalog;
-import org.apache.paimon.catalog.Identifier;
+import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.Table;
+import org.apache.paimon.utils.StringUtils;
 import org.apache.paimon.utils.TimeUtils;
 
 import org.apache.flink.table.annotation.ArgumentHint;
@@ -46,17 +47,22 @@ public abstract class CreateOrReplaceTagBaseProcedure extends ProcedureBase {
                 @ArgumentHint(
                         name = "time_retained",
                         type = @DataTypeHint("STRING"),
-                        isOptional = true)
+                        isOptional = true),
+                @ArgumentHint(name = "branch", type = @DataTypeHint("STRING"), isOptional = true)
             })
     public String[] call(
             ProcedureContext procedureContext,
             String tableId,
             String tagName,
             @Nullable Long snapshotId,
-            @Nullable String timeRetained)
+            @Nullable String timeRetained,
+            String branchName)
             throws Catalog.TableNotExistException {
-        Table table = catalog.getTable(Identifier.fromString(tableId));
-        createOrReplaceTag(table, tagName, snapshotId, toDuration(timeRetained));
+        FileStoreTable fileStoreTable = (FileStoreTable) table(tableId);
+        if (StringUtils.isNotEmpty(branchName)) {
+            fileStoreTable = fileStoreTable.switchToBranch(branchName);
+        }
+        createOrReplaceTag(fileStoreTable, tagName, snapshotId, toDuration(timeRetained));
         return new String[] {"Success"};
     }
 

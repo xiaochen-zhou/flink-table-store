@@ -46,6 +46,7 @@ public class CreateTagFromTimestampActionFactory implements ActionFactory {
                 new CreateTagFromTimestampAction(
                         params.getRequired(DATABASE),
                         params.getRequired(TABLE),
+                        params.get(BRANCH),
                         params.getRequired(TAG),
                         timestamp,
                         timeRetained,
@@ -63,6 +64,7 @@ public class CreateTagFromTimestampActionFactory implements ActionFactory {
                 "  create_tag_from_timestamp --warehouse <warehouse_path> \\\n"
                         + "--database <database_name> \\\n"
                         + "--table <table_name> \\\n"
+                        + "--branch <table_name> \\\n"
                         + "--tag <tag> \\\n"
                         + "--timestamp <timestamp> \\\n"
                         + "[--timeRetained <duration>] \\\n"

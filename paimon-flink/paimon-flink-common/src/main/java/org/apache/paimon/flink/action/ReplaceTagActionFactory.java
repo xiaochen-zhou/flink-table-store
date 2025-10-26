@@ -38,9 +38,10 @@ public class ReplaceTagActionFactory extends CreateOrReplaceTagActionFactory {
             Map<String, String> catalogConfig,
             String tagName,
             Long snapshot,
-            Duration timeRetained) {
+            Duration timeRetained,
+            String branchName) {
         return new ReplaceTagAction(
-                database, table, catalogConfig, tagName, snapshot, timeRetained);
+                database, table, catalogConfig, tagName, snapshot, timeRetained, branchName);
     }
 
     @Override
@@ -56,7 +57,8 @@ public class ReplaceTagActionFactory extends CreateOrReplaceTagActionFactory {
                         + "--table <table_name> \\\n"
                         + "--tag_name <tag_name> \\\n"
                         + "[--snapshot <snapshot_id>] \\\n"
-                        + "[--time_retained <time_retained>]");
+                        + "[--time_retained <time_retained>] \\\n"
+                        + "[--branch_name <branch_name>]");
         System.out.println();
     }
 }

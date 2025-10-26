@@ -27,6 +27,7 @@ public class CreateTagFromWatermarkAction extends ActionBase implements LocalAct
 
     private final String database;
     private final String table;
+    private final String branch;
     private final String tag;
     private final Long watermark;
     private final String timeRetained;
@@ -34,6 +35,7 @@ public class CreateTagFromWatermarkAction extends ActionBase implements LocalAct
     public CreateTagFromWatermarkAction(
             String database,
             String table,
+            String branch,
             String tag,
             Long watermark,
             String timeRetained,
@@ -41,6 +43,7 @@ public class CreateTagFromWatermarkAction extends ActionBase implements LocalAct
         super(catalogConfig);
         this.database = database;
         this.table = table;
+        this.branch = branch;
         this.tag = tag;
         this.watermark = watermark;
         this.timeRetained = timeRetained;
@@ -52,6 +55,6 @@ public class CreateTagFromWatermarkAction extends ActionBase implements LocalAct
                 new CreateTagFromWatermarkProcedure();
         createTagFromWatermarkProcedure.withCatalog(catalog);
         createTagFromWatermarkProcedure.call(
-                null, database + "." + table, tag, watermark, timeRetained);
+                null, database + "." + table, tag, branch, watermark, timeRetained);
     }
 }

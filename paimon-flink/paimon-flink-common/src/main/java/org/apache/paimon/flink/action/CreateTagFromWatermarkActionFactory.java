@@ -48,6 +48,7 @@ public class CreateTagFromWatermarkActionFactory implements ActionFactory {
                 new CreateTagFromWatermarkAction(
                         params.getRequired(DATABASE),
                         params.getRequired(TABLE),
+                        params.get(BRANCH),
                         tag,
                         watermark,
                         timeRetained,
@@ -66,6 +67,7 @@ public class CreateTagFromWatermarkActionFactory implements ActionFactory {
                         + "--warehouse <warehouse_path> \\\n"
                         + "--database <database_name> \\\n"
                         + "--table <table_name> \\\n"
+                        + "--branch <table_name> \\\n"
                         + "--tag <tag> \\\n"
                         + "--watermark <watermark> \\\n"
                         + "[--timeRetained <duration>] \\\n"

@@ -38,8 +38,10 @@ public class CreateTagActionFactory extends CreateOrReplaceTagActionFactory {
             Map<String, String> catalogConfig,
             String tagName,
             Long snapshot,
-            Duration timeRetained) {
-        return new CreateTagAction(database, table, catalogConfig, tagName, snapshot, timeRetained);
+            Duration timeRetained,
+            String branchName) {
+        return new CreateTagAction(
+                database, table, catalogConfig, tagName, snapshot, timeRetained, branchName);
     }
 
     @Override
@@ -54,7 +56,8 @@ public class CreateTagActionFactory extends CreateOrReplaceTagActionFactory {
                         + "--database <database_name> \\\n"
                         + "--table <table_name> \\\n"
                         + "--tag_name <tag_name> \\\n"
-                        + "[--snapshot <snapshot_id>]");
+                        + "[--snapshot <snapshot_id>] \\\n"
+                        + "[--branch_name <branch_name>]");
         System.out.println();
     }
 }

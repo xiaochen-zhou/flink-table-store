@@ -104,4 +104,66 @@ public class CreateTagsProcedureITCase extends CatalogITCaseBase {
                 .withMessageContaining(
                         "Cannot create tag because given snapshot #1 doesn't exist.");
     }
+
+    @Test
+    public void testCreateTagWithBranch() {
+        sql(
+                "CREATE TABLE T ("
+                        + " k STRING,"
+                        + " dt STRING,"
+                        + " PRIMARY KEY (k, dt) NOT ENFORCED"
+                        + ") PARTITIONED BY (dt) WITH ("
+                        + " 'bucket' = '1'"
+                        + ")");
+        sql("insert into T values('k', '2024-01-01')");
+        sql("insert into T values('k2', '2024-01-02')");
+        sql("CALL sys.create_tag('default.T', 'tag1')");
+        assertThat(
+                        sql("select * from T /*+ OPTIONS('scan.tag-name'='tag1') */").stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder("+I[k2, 2024-01-02]", "+I[k, 2024-01-01]");
+
+        sql("CALL sys.create_branch('default.T', 'branch1')");
+        sql("insert into T /*+ OPTIONS('branch' = 'branch1') */ values('k3', '2024-01-03')");
+        sql("insert into T /*+ OPTIONS('branch' = 'branch1') */ values('k4', '2024-01-04')");
+        sql("insert into T /*+ OPTIONS('branch' = 'branch1') */ values('k5', '2024-01-05')");
+        sql("CALL sys.create_tag('default.T', 'tag2', null, null, 'branch1')");
+
+        assertThat(sql("select tag_name from `T$tags`").stream().map(Row::toString))
+                .doesNotContain("+I[tag2]");
+
+        assertThat(
+                        sql("select tag_name from `T$tags` /*+ OPTIONS('branch' = 'branch1') */")
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder("+I[tag2]");
+
+        assertThat(
+                        sql(
+                                        "select * from T /*+ OPTIONS('branch' = 'branch1', 'scan.tag-name'='tag2') */")
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder(
+                        "+I[k3, 2024-01-03]", "+I[k4, 2024-01-04]", "+I[k5, 2024-01-05]");
+    }
+
+    @Test
+    public void testThrowBranchNotExistException() {
+        sql(
+                "CREATE TABLE T ("
+                        + " k STRING,"
+                        + " dt STRING,"
+                        + " PRIMARY KEY (k, dt) NOT ENFORCED"
+                        + ") PARTITIONED BY (dt) WITH ("
+                        + " 'bucket' = '1'"
+                        + ")");
+
+        assertThatException()
+                .isThrownBy(
+                        () ->
+                                sql(
+                                        "CALL sys.create_tag('default.T', 'tag2', null, null, 'branch1')"))
+                .withRootCauseInstanceOf(IllegalArgumentException.class)
+                .withMessageContaining("Branch branch1 does not exist");
+    }
 }

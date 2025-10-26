@@ -29,6 +29,7 @@ public class CreateTagFromTimestampAction extends ActionBase implements LocalAct
 
     private final String database;
     private final String table;
+    private final String branch;
     private final String tag;
     private final Long timestamp;
     private final String timeRetained;
@@ -36,6 +37,7 @@ public class CreateTagFromTimestampAction extends ActionBase implements LocalAct
     public CreateTagFromTimestampAction(
             String database,
             String table,
+            String branch,
             String tag,
             Long timestamp,
             String timeRetained,
@@ -43,6 +45,7 @@ public class CreateTagFromTimestampAction extends ActionBase implements LocalAct
         super(catalogConfig);
         this.database = database;
         this.table = table;
+        this.branch = branch;
         this.tag = tag;
         this.timestamp = timestamp;
         this.timeRetained = timeRetained;
@@ -56,6 +59,7 @@ public class CreateTagFromTimestampAction extends ActionBase implements LocalAct
         createTagFromTimestampProcedure.call(
                 new DefaultProcedureContext(env),
                 database + "." + table,
+                branch,
                 tag,
                 timestamp,
                 timeRetained);

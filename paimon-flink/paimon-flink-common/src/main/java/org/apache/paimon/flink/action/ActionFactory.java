@@ -47,6 +47,7 @@ public interface ActionFactory extends Factory {
     String WAREHOUSE = "warehouse";
     String DATABASE = "database";
     String TABLE = "table";
+    String BRANCH = "branch";
     @Deprecated String PATH = "path";
     String CATALOG_CONF = "catalog_conf";
     String TABLE_CONF = "table_conf";

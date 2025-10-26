@@ -41,7 +41,7 @@
         <module>paimon-s3-impl</module>
         <module>paimon-cosn</module>
         <module>paimon-cosn-impl</module>
-        <module>paimon-jindo</module>
+<!--        <module>paimon-jindo</module>-->
         <module>paimon-gs</module>
         <module>paimon-gs-impl</module>
         <module>paimon-azure</module>
