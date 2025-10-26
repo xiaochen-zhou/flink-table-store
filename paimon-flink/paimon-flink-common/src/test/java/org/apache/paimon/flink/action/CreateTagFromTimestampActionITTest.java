@@ -63,6 +63,7 @@ public class CreateTagFromTimestampActionITTest extends ActionITCaseBase {
         assertThat(actual).isEqualTo(expected);
         long ts = table.snapshotManager().latestSnapshot().timeMillis();
         String tag = "tag_test";
+        String branch = "branch_test";
 
         createAction(
                         CreateTagFromTimestampAction.class,
@@ -78,11 +79,13 @@ public class CreateTagFromTimestampActionITTest extends ActionITCaseBase {
                         "--timestamp",
                         Long.toString(ts),
                         "--force_start_flink_job",
-                        Boolean.toString(forceStartFlinkJob))
+                        Boolean.toString(forceStartFlinkJob),
+                        "--branch",
+                        branch)
                 .run();
 
         Snapshot snapshot = table.tagManager().tags().firstKey();
-
+        table = table.switchToBranch(branch);
         assertThat(table.tagManager().tagExists(tag)).isTrue();
         assertThat(table.tagManager().tagCount()).isEqualTo(1);
         assertThat(snapshot.timeMillis()).isEqualTo(ts);
@@ -103,7 +106,7 @@ public class CreateTagFromTimestampActionITTest extends ActionITCaseBase {
                         new ArrayList<>(Arrays.asList(pk)),
                         Collections.singletonList("k"),
                         Collections.emptyMap());
-
+        //        table = table.switchToBranch(bra)
         StreamWriteBuilder writeBuilder = table.newStreamWriteBuilder().withCommitUser(commitUser);
         write = writeBuilder.newWrite();
         commit = writeBuilder.newCommit();

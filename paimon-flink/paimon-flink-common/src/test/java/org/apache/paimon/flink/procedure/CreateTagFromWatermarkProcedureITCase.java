@@ -184,4 +184,92 @@ public class CreateTagFromWatermarkProcedureITCase extends CatalogITCaseBase {
                 .containsExactlyInAnyOrder(
                         String.format("+I[tag3, 2, %s, %s]", commitTime2, watermark2));
     }
+
+    @Test
+    public void testCreateTagFromWatermarkWithBranch() throws Exception {
+        sql(
+                "CREATE TABLE T ("
+                        + " k STRING,"
+                        + " dt STRING,"
+                        + " PRIMARY KEY (k, dt) NOT ENFORCED"
+                        + ") PARTITIONED BY (dt) WITH ("
+                        + " 'bucket' = '1'"
+                        + ")");
+        sql("CALL sys.create_branch('default.T', 'branch1')");
+        sql(
+                "insert into T/*+ OPTIONS('branch' = 'branch1', 'end-input.watermark'= '1000') */ values('k1', '2024-01-01')");
+        sql("CALL sys.create_tag('default.T', 'tag1', null, null, 'branch1')");
+
+        sql(
+                "insert into T/*+ OPTIONS('branch' = 'branch1', 'end-input.watermark'= '2000',"
+                        + " 'snapshot.num-retained.max' = '1',"
+                        + " 'snapshot.num-retained.min' = '1') */"
+                        + " values('k2', '2024-01-02')");
+
+        FileStoreTable table = paimonTable("T").switchToBranch("branch1");
+        assertThat(table.snapshotManager().snapshotExists(1)).isFalse();
+        Snapshot tagSnapshot1 = table.tagManager().getOrThrow("tag1");
+
+        long tagsCommitTime = tagSnapshot1.timeMillis();
+        long tagsWatermark = tagSnapshot1.watermark();
+
+        Snapshot snapshot2 = table.snapshotManager().snapshot(2);
+        long commitTime2 = snapshot2.timeMillis();
+        long watermark2 = snapshot2.watermark();
+
+        assertThat(tagsWatermark == 1000).isTrue();
+        assertThat(watermark2 == 2000).isTrue();
+
+        assertThat(
+                        sql(
+                                        "CALL sys.create_tag_from_watermark("
+                                                + "`table` => 'default.T',"
+                                                + "`tag` => 'tag2',"
+                                                + "`watermark` => %s, `branch` => 'branch1')",
+                                        tagsWatermark - 1)
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder(
+                        String.format("+I[tag2, 1, %s, %s]", tagsCommitTime, tagsWatermark));
+
+        assertThat(
+                        sql(
+                                        "CALL sys.create_tag_from_watermark("
+                                                + "`table` => 'default.T',"
+                                                + "`tag` => 'tag3',"
+                                                + "`watermark` => %s, `branch` => 'branch1')",
+                                        watermark2 - 1)
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder(
+                        String.format("+I[tag3, 2, %s, %s]", commitTime2, watermark2));
+
+        assertThatException()
+                .isThrownBy(
+                        () ->
+                                sql(
+                                                "select * from T /*+ OPTIONS('scan.watermark'='%d') */",
+                                                tagsWatermark - 1)
+                                        .stream()
+                                        .map(Row::toString))
+                .withRootCauseInstanceOf(RuntimeException.class)
+                .withMessageContaining(
+                        "There is currently no snapshot later than or equal to watermark");
+
+        assertThat(
+                        sql(
+                                        "select * from T /*+ OPTIONS('branch' = 'branch1', 'scan.watermark'='%d') */",
+                                        tagsWatermark - 1)
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder("+I[k2, 2024-01-02]", "+I[k1, 2024-01-01]");
+
+        assertThat(
+                        sql(
+                                        "select * from T /*+ OPTIONS('branch' = 'branch1', 'scan.watermark'='%d') */",
+                                        watermark2 - 1)
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder("+I[k2, 2024-01-02]");
+    }
 }

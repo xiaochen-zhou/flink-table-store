@@ -57,10 +57,10 @@ public class CreateTagFromWatermarkProcedure extends ProcedureBase {
     public Row[] call(
             ProcedureContext procedureContext,
             String tableId,
-            String branchName,
             String tagName,
             Long watermark,
-            @Nullable String timeRetained)
+            @Nullable String timeRetained,
+            @Nullable String branchName)
             throws Catalog.TableNotExistException {
         FileStoreTable fileStoreTable = (FileStoreTable) table(tableId);
         if (StringUtils.isNotEmpty(branchName)) {

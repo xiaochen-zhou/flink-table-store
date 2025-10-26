@@ -59,9 +59,9 @@ public class CreateTagFromTimestampAction extends ActionBase implements LocalAct
         createTagFromTimestampProcedure.call(
                 new DefaultProcedureContext(env),
                 database + "." + table,
-                branch,
                 tag,
                 timestamp,
-                timeRetained);
+                timeRetained,
+                branch);
     }
 }

@@ -55,6 +55,6 @@ public class CreateTagFromWatermarkAction extends ActionBase implements LocalAct
                 new CreateTagFromWatermarkProcedure();
         createTagFromWatermarkProcedure.withCatalog(catalog);
         createTagFromWatermarkProcedure.call(
-                null, database + "." + table, tag, branch, watermark, timeRetained);
+                null, database + "." + table, tag, watermark, timeRetained, branch);
     }
 }

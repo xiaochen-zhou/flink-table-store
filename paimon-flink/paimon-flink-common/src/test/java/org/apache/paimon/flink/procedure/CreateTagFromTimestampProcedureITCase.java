@@ -119,6 +119,7 @@ public class CreateTagFromTimestampProcedureITCase extends CatalogITCaseBase {
                         + " 'bucket' = '1'"
                         + ")");
 
+        sql("CALL sys.create_branch('default.T', 'branch1')");
         sql("insert into T values('1', '2024-01-01')");
         Thread.sleep(100L);
 
@@ -163,5 +164,68 @@ public class CreateTagFromTimestampProcedureITCase extends CatalogITCaseBase {
                                 .map(Row::toString))
                 .containsExactlyInAnyOrder(
                         String.format("+I[tag3, 2, %s, %s]", earliestCommitTime, Long.MIN_VALUE));
+    }
+
+    @Test
+    public void testCreateTagsFromTagsCommitTimeWithBranch() throws Exception {
+        sql(
+                "CREATE TABLE T ("
+                        + " k STRING,"
+                        + " dt STRING,"
+                        + " PRIMARY KEY (k, dt) NOT ENFORCED"
+                        + ") PARTITIONED BY (dt) WITH ("
+                        + " 'bucket' = '1'"
+                        + ")");
+
+        sql("CALL sys.create_branch('default.T', 'branch1')");
+        sql("insert into T /*+ OPTIONS('branch' = 'branch1') */ values('1', '2024-01-01')");
+        Thread.sleep(100L);
+
+        sql("CALL sys.create_tag('default.T', 'tag1', null, null, 'branch1')");
+        sql(
+                "insert into T/*+ OPTIONS("
+                        + " 'branch' = 'branch1',"
+                        + " 'snapshot.num-retained.max' = '1',"
+                        + " 'snapshot.num-retained.min' = '1') */"
+                        + " values('2', '2024-01-01')");
+
+        FileStoreTable table = paimonTable("T").switchToBranch("branch1");
+        long earliestCommitTime = table.snapshotManager().earliestSnapshot().timeMillis();
+        long tagSnapshotCommitTime = table.tagManager().getOrThrow("tag1").timeMillis();
+
+        assertThat(tagSnapshotCommitTime < earliestCommitTime).isTrue();
+
+        assertThat(
+                        sql(
+                                        "CALL sys.create_tag_from_timestamp("
+                                                + "`table` => 'default.T',"
+                                                + "`tag` => 'tag2',"
+                                                + "`timestamp` => %s, `branch` => 'branch1')",
+                                        tagSnapshotCommitTime - 1)
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder(
+                        String.format(
+                                "+I[tag2, 1, %s, %s]", tagSnapshotCommitTime, Long.MIN_VALUE));
+
+        assertThat(
+                        sql(
+                                        "CALL sys.create_tag_from_timestamp("
+                                                + "`table` => 'default.T',"
+                                                + "`tag` => 'tag3',"
+                                                + "`timestamp` => %s, `branch` => 'branch1')",
+                                        earliestCommitTime - 1)
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder(
+                        String.format("+I[tag3, 2, %s, %s]", earliestCommitTime, Long.MIN_VALUE));
+
+        assertThat(
+                        sql(
+                                        "select * from T /*+ OPTIONS('branch' = 'branch1', 'scan.timestamp-millis'='%s') */",
+                                        earliestCommitTime)
+                                .stream()
+                                .map(Row::toString))
+                .containsExactlyInAnyOrder("+I[1, 2024-01-01]", "+I[2, 2024-01-01]");
     }
 }
