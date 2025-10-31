@@ -117,7 +117,13 @@ public class FileSystemCatalog extends AbstractCatalog {
 
     @Override
     protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
-        return uncheck(() -> listTablesInFileSystem(newDatabasePath(databaseName), filter));
+        return uncheck(
+                () -> {
+                    if (filter.equals(Filter.alwaysTrue())) {
+                        return listTablesInFileSystem(newDatabasePath(databaseName));
+                    }
+                    return listTablesInFileSystem(newDatabasePath(databaseName), filter);
+                });
     }
 
     @Override

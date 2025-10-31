@@ -251,7 +251,6 @@ public abstract class AbstractCatalog implements Catalog {
 
         // check db exists
         getDatabase(databaseName);
-
         return listTablesImpl(databaseName, filter).stream().sorted().collect(Collectors.toList());
     }
 
@@ -699,12 +698,12 @@ public abstract class AbstractCatalog implements Catalog {
         return listTablesInFileSystem(databasePath, Filter.alwaysTrue());
     }
 
-    protected List<String> listTablesInFileSystem(Path databasePath, Filter<String> filter)
+    protected List<String> listTablesInFileSystem(Path databasePath, Filter<String> tableNameFilter)
             throws IOException {
         Filter<FileStatus> fileStatusFilter =
                 status ->
                         status.isDir()
-                                && filter.test(status.getPath().getName())
+                                && tableNameFilter.test(status.getPath().getName())
                                 && tableExistsInFileSystem(status.getPath(), DEFAULT_MAIN_BRANCH);
         return Arrays.stream(fileIO.listDirectories(databasePath, fileStatusFilter))
                 .map(status -> status.getPath().getName())

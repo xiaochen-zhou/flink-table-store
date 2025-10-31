@@ -497,4 +497,117 @@ class CachingCatalogTest extends CatalogTestBase {
         assertThat(caching.manifestCache.maxMemorySize()).isEqualTo(MemorySize.ofMebiBytes(256));
         assertThat(caching.manifestCache.maxElementSize()).isEqualTo(Long.MAX_VALUE);
     }
+
+    @Test
+    public void testListDatabasesWithFilter() throws Exception {
+        // Create test databases
+        String[] testDatabases = {
+            "test_db_1", "test_db_2", "prod_db_1", "prod_db_2", "dev_database"
+        };
+
+        // Clean up any existing databases
+        for (String dbName : testDatabases) {
+            catalog.dropDatabase(dbName, true, true);
+        }
+
+        // Create test databases
+        for (String dbName : testDatabases) {
+            catalog.createDatabase(dbName, false);
+        }
+
+        try {
+            // Test filter for databases starting with "test_"
+            List<String> testDbs = catalog.listDatabases(name -> name.startsWith("test_"));
+            Assertions.assertThat(testDbs).containsExactlyInAnyOrder("test_db_1", "test_db_2");
+
+            // Test filter for databases starting with "prod_"
+            List<String> prodDbs = catalog.listDatabases(name -> name.startsWith("prod_"));
+            Assertions.assertThat(prodDbs).containsExactlyInAnyOrder("prod_db_1", "prod_db_2");
+
+            // Test filter for databases containing "database"
+            List<String> dbsWithDatabase = catalog.listDatabases(name -> name.contains("database"));
+            Assertions.assertThat(dbsWithDatabase).containsExactly("dev_database");
+
+            // Test filter that matches no databases
+            List<String> noDbs = catalog.listDatabases(name -> name.startsWith("nonexistent_"));
+            Assertions.assertThat(noDbs).isEmpty();
+
+            // Test filter that matches all databases
+            List<String> allDbs = catalog.listDatabases(name -> true);
+            Assertions.assertThat(allDbs)
+                    .contains("test_db_1", "test_db_2", "prod_db_1", "prod_db_2", "dev_database");
+
+        } finally {
+            // Clean up test databases
+            for (String dbName : testDatabases) {
+                catalog.dropDatabase(dbName, true, true);
+            }
+        }
+    }
+
+    @Test
+    public void testListTablesWithFilter() throws Exception {
+        String databaseName = "testListTablesWithFilter";
+        catalog.dropDatabase(databaseName, true, true);
+        catalog.createDatabase(databaseName, false);
+
+        try {
+            // Create test tables with different naming patterns
+            String[] tableNames = {
+                "user_table",
+                "user_profile",
+                "user_settings",
+                "order_table",
+                "order_items",
+                "order_history",
+                "product_catalog",
+                "product_reviews",
+                "temp_table_1",
+                "temp_table_2"
+            };
+
+            for (String tableName : tableNames) {
+                catalog.createTable(
+                        Identifier.create(databaseName, tableName),
+                        Schema.newBuilder().column("id", DataTypes.INT()).build(),
+                        false);
+            }
+
+            // Test filter for tables starting with "user_"
+            List<String> userTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("user_"));
+            Assertions.assertThat(userTables)
+                    .containsExactlyInAnyOrder("user_table", "user_profile", "user_settings");
+
+            // Test filter for tables starting with "order_"
+            List<String> orderTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("order_"));
+            Assertions.assertThat(orderTables)
+                    .containsExactlyInAnyOrder("order_table", "order_items", "order_history");
+
+            // Test filter for tables containing "product"
+            List<String> productTables =
+                    catalog.listTables(databaseName, name -> name.contains("product"));
+            Assertions.assertThat(productTables)
+                    .containsExactlyInAnyOrder("product_catalog", "product_reviews");
+
+            // Test filter for temporary tables
+            List<String> tempTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("temp_"));
+            Assertions.assertThat(tempTables)
+                    .containsExactlyInAnyOrder("temp_table_1", "temp_table_2");
+
+            // Test filter that matches no tables
+            List<String> noTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("nonexistent_"));
+            Assertions.assertThat(noTables).isEmpty();
+
+            // Test filter that matches all tables
+            List<String> allTables = catalog.listTables(databaseName, name -> true);
+            Assertions.assertThat(allTables).containsExactlyInAnyOrder(tableNames);
+
+        } finally {
+            catalog.dropDatabase(databaseName, true, true);
+        }
+    }
 }

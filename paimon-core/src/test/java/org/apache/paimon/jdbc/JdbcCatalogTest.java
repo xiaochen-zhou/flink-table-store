@@ -24,7 +24,9 @@ import org.apache.paimon.catalog.CatalogTestBase;
 import org.apache.paimon.catalog.Identifier;
 import org.apache.paimon.options.CatalogOptions;
 import org.apache.paimon.options.Options;
+import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.Table;
+import org.apache.paimon.types.DataTypes;
 
 import org.apache.paimon.shade.guava30.com.google.common.collect.Maps;
 
@@ -34,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectOutputStream;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -123,6 +126,102 @@ public class JdbcCatalogTest extends CatalogTestBase {
                         oos.flush();
                     }
                 });
+    }
+
+    @Test
+    public void testListDatabasesWithFilter() throws Exception {
+
+        String[] testDatabases = {
+            "test_db_1", "test_db_2", "prod_db_1", "prod_db_2", "dev_database"
+        };
+        for (String dbName : testDatabases) {
+            catalog.dropDatabase(dbName, true, true);
+        }
+
+        for (String dbName : testDatabases) {
+            catalog.createDatabase(dbName, false);
+        }
+
+        try {
+            List<String> testDbs = catalog.listDatabases(name -> name.startsWith("test_"));
+            assertThat(testDbs).containsExactlyInAnyOrder("test_db_1", "test_db_2");
+
+            List<String> prodDbs = catalog.listDatabases(name -> name.startsWith("prod_"));
+            assertThat(prodDbs).containsExactlyInAnyOrder("prod_db_1", "prod_db_2");
+
+            List<String> dbsWithDatabase = catalog.listDatabases(name -> name.contains("database"));
+            assertThat(dbsWithDatabase).containsExactly("dev_database");
+
+            List<String> noDbs = catalog.listDatabases(name -> name.startsWith("nonexistent_"));
+            assertThat(noDbs).isEmpty();
+
+            List<String> allDbs = catalog.listDatabases(name -> true);
+            assertThat(allDbs)
+                    .contains("test_db_1", "test_db_2", "prod_db_1", "prod_db_2", "dev_database");
+
+        } finally {
+            for (String dbName : testDatabases) {
+                catalog.dropDatabase(dbName, true, true);
+            }
+        }
+    }
+
+    @Test
+    public void testListTablesWithFilter() throws Exception {
+        String databaseName = "testListTablesWithFilter";
+        catalog.dropDatabase(databaseName, true, true);
+        catalog.createDatabase(databaseName, false);
+
+        try {
+            String[] tableNames = {
+                "user_table",
+                "user_profile",
+                "user_settings",
+                "order_table",
+                "order_items",
+                "order_history",
+                "product_catalog",
+                "product_reviews",
+                "temp_table_1",
+                "temp_table_2"
+            };
+
+            for (String tableName : tableNames) {
+                catalog.createTable(
+                        Identifier.create(databaseName, tableName),
+                        Schema.newBuilder().column("id", DataTypes.INT()).build(),
+                        false);
+            }
+
+            List<String> userTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("user_"));
+            assertThat(userTables)
+                    .containsExactlyInAnyOrder("user_table", "user_profile", "user_settings");
+
+            List<String> orderTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("order_"));
+            assertThat(orderTables)
+                    .containsExactlyInAnyOrder("order_table", "order_items", "order_history");
+
+            List<String> productTables =
+                    catalog.listTables(databaseName, name -> name.contains("product"));
+            assertThat(productTables)
+                    .containsExactlyInAnyOrder("product_catalog", "product_reviews");
+
+            List<String> tempTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("temp_"));
+            assertThat(tempTables).containsExactlyInAnyOrder("temp_table_1", "temp_table_2");
+
+            List<String> noTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("nonexistent_"));
+            assertThat(noTables).isEmpty();
+
+            List<String> allTables = catalog.listTables(databaseName, name -> true);
+            assertThat(allTables).containsExactlyInAnyOrder(tableNames);
+
+        } finally {
+            catalog.dropDatabase(databaseName, true, true);
+        }
     }
 
     @Override

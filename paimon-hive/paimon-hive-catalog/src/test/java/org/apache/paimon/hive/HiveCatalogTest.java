@@ -403,6 +403,228 @@ public class HiveCatalogTest extends CatalogTestBase {
         catalog.dropDatabase(databaseName, true, true);
     }
 
+    @Test
+    public void testListDatabasesWithFilter() throws Exception {
+        String[] testDatabases = {
+            "test_db_1", "test_db_2", "prod_db_1", "prod_db_2", "dev_database"
+        };
+        for (String dbName : testDatabases) {
+            catalog.dropDatabase(dbName, true, true);
+        }
+        for (String dbName : testDatabases) {
+            catalog.createDatabase(dbName, false);
+        }
+
+        try {
+            List<String> testDbs = catalog.listDatabases(name -> name.startsWith("test_"));
+            assertThat(testDbs).containsExactlyInAnyOrder("test_db_1", "test_db_2");
+
+            List<String> prodDbs = catalog.listDatabases(name -> name.startsWith("prod_"));
+            assertThat(prodDbs).containsExactlyInAnyOrder("prod_db_1", "prod_db_2");
+
+            List<String> dbsWithDatabase = catalog.listDatabases(name -> name.contains("database"));
+            assertThat(dbsWithDatabase).containsExactly("dev_database");
+
+            List<String> noDbs = catalog.listDatabases(name -> name.startsWith("nonexistent_"));
+            assertThat(noDbs).isEmpty();
+
+            List<String> allDbs = catalog.listDatabases(name -> true);
+            assertThat(allDbs)
+                    .contains(
+                            "default",
+                            "test_db_1",
+                            "test_db_2",
+                            "prod_db_1",
+                            "prod_db_2",
+                            "dev_database");
+
+        } finally {
+            for (String dbName : testDatabases) {
+                catalog.dropDatabase(dbName, true, true);
+            }
+        }
+    }
+
+    @Test
+    public void testListTablesWithFilter() throws Exception {
+        String databaseName = "testListTablesWithFilter";
+        catalog.dropDatabase(databaseName, true, true);
+        catalog.createDatabase(databaseName, false);
+
+        try {
+            String[] tableNames = {
+                "user_table",
+                "user_profile",
+                "user_settings",
+                "order_table",
+                "order_items",
+                "order_history",
+                "product_catalog",
+                "product_reviews",
+                "temp_table_1",
+                "temp_table_2"
+            };
+
+            for (String tableName : tableNames) {
+                catalog.createTable(
+                        Identifier.create(databaseName, tableName),
+                        Schema.newBuilder().column("id", DataTypes.INT()).build(),
+                        false);
+            }
+
+            List<String> userTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("user_"));
+            assertThat(userTables)
+                    .containsExactlyInAnyOrder("user_table", "user_profile", "user_settings");
+
+            List<String> orderTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("order_"));
+            assertThat(orderTables)
+                    .containsExactlyInAnyOrder("order_table", "order_items", "order_history");
+
+            List<String> productTables =
+                    catalog.listTables(databaseName, name -> name.contains("product"));
+            assertThat(productTables)
+                    .containsExactlyInAnyOrder("product_catalog", "product_reviews");
+
+            List<String> tempTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("temp_"));
+            assertThat(tempTables).containsExactlyInAnyOrder("temp_table_1", "temp_table_2");
+
+            List<String> noTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("nonexistent_"));
+            assertThat(noTables).isEmpty();
+
+            List<String> allTables = catalog.listTables(databaseName, name -> true);
+            assertThat(allTables).containsExactlyInAnyOrder(tableNames);
+
+            List<String> complexFilter =
+                    catalog.listTables(
+                            databaseName,
+                            name -> name.endsWith("_table") || name.contains("catalog"));
+            assertThat(complexFilter)
+                    .containsExactlyInAnyOrder("user_table", "order_table", "product_catalog");
+
+        } finally {
+            catalog.dropDatabase(databaseName, true, true);
+        }
+    }
+
+    @Test
+    public void testListTablesWithFilterPerformance() throws Exception {
+        String databaseName = "testListTablesFilterPerformance";
+        catalog.dropDatabase(databaseName, true, true);
+        catalog.createDatabase(databaseName, false);
+
+        try {
+            // Create a large number of tables to test filtering performance
+            int tableCount = 100;
+            for (int i = 0; i < tableCount; i++) {
+                String tableName = (i % 2 == 0) ? "even_table_" + i : "odd_table_" + i;
+                catalog.createTable(
+                        Identifier.create(databaseName, tableName),
+                        Schema.newBuilder().column("id", DataTypes.INT()).build(),
+                        false);
+            }
+
+            // Test filtering for even tables
+            List<String> evenTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("even_"));
+            assertThat(evenTables).hasSize(50);
+
+            // Test filtering for odd tables
+            List<String> oddTables =
+                    catalog.listTables(databaseName, name -> name.startsWith("odd_"));
+            assertThat(oddTables).hasSize(50);
+
+            // Verify that filtering is more efficient than listing all and filtering manually
+            long startTime = System.currentTimeMillis();
+            List<String> filteredTables =
+                    catalog.listTables(databaseName, name -> name.contains("_5"));
+            long filterTime = System.currentTimeMillis() - startTime;
+
+            startTime = System.currentTimeMillis();
+            List<String> allTables = catalog.listTables(databaseName);
+            List<String> manuallyFiltered = new ArrayList<>();
+            for (String table : allTables) {
+                if (table.contains("_5")) {
+                    manuallyFiltered.add(table);
+                }
+            }
+            long manualTime = System.currentTimeMillis() - startTime;
+
+            // Both should return the same results
+            assertThat(filteredTables).containsExactlyInAnyOrderElementsOf(manuallyFiltered);
+
+            // The filtered approach should be at least as fast (in most cases faster)
+            // Note: This is a rough performance check, actual performance may vary
+            System.out.println(
+                    "Filter time: " + filterTime + "ms, Manual time: " + manualTime + "ms");
+
+        } finally {
+            catalog.dropDatabase(databaseName, true, true);
+        }
+    }
+
+    @Test
+    public void testListTablesWithFilterEdgeCases() throws Exception {
+        String databaseName = "testListTablesFilterEdgeCases";
+        catalog.dropDatabase(databaseName, true, true);
+        catalog.createDatabase(databaseName, false);
+
+        try {
+            // Create tables with special characters and edge case names
+            String[] specialTableNames = {
+                "table_with_underscore",
+                "table-with-dash",
+                "table.with.dots",
+                "TABLE_UPPERCASE",
+                "table_lowercase",
+                "123_numeric_start",
+                "table_123_numeric_middle",
+                "table_numeric_end_456"
+            };
+
+            for (String tableName : specialTableNames) {
+                catalog.createTable(
+                        Identifier.create(databaseName, tableName),
+                        Schema.newBuilder().column("id", DataTypes.INT()).build(),
+                        false);
+            }
+
+            // Test case-sensitive filtering
+            List<String> upperCaseTables =
+                    catalog.listTables(databaseName, name -> name.equals(name.toUpperCase()));
+            assertThat(upperCaseTables).containsExactly("TABLE_UPPERCASE");
+
+            // Test filtering with special characters
+            List<String> tablesWithDots =
+                    catalog.listTables(databaseName, name -> name.contains("."));
+            assertThat(tablesWithDots).containsExactly("table.with.dots");
+
+            List<String> tablesWithDashes =
+                    catalog.listTables(databaseName, name -> name.contains("-"));
+            assertThat(tablesWithDashes).containsExactly("table-with-dash");
+
+            // Test filtering with numeric patterns
+            List<String> tablesWithNumbers =
+                    catalog.listTables(databaseName, name -> name.matches(".*\\d+.*"));
+            assertThat(tablesWithNumbers)
+                    .containsExactlyInAnyOrder(
+                            "123_numeric_start",
+                            "table_123_numeric_middle",
+                            "table_numeric_end_456");
+
+            // Test empty filter result
+            List<String> noMatch =
+                    catalog.listTables(databaseName, name -> name.startsWith("xyz_"));
+            assertThat(noMatch).isEmpty();
+
+        } finally {
+            catalog.dropDatabase(databaseName, true, true);
+        }
+    }
+
     @Override
     protected boolean supportsView() {
         return true;

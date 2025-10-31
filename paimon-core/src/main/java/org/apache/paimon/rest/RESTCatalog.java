@@ -125,6 +125,9 @@ public class RESTCatalog implements Catalog {
 
     @Override
     public List<String> listDatabases(Filter<String> filter) {
+        if (filter.equals(Filter.alwaysTrue())) {
+            return listDatabases();
+        }
         throw new UnsupportedOperationException("listDatabases with filter is not supported.");
     }
 
@@ -227,6 +230,9 @@ public class RESTCatalog implements Catalog {
     @Override
     public List<String> listTables(String databaseName, Filter<String> filter)
             throws DatabaseNotExistException {
+        if (filter.equals(Filter.alwaysTrue())) {
+            return listTables(databaseName);
+        }
         throw new UnsupportedOperationException("listTables with filter is not supported.");
     }
 

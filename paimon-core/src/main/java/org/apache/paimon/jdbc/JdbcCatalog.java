@@ -268,6 +268,9 @@ public class JdbcCatalog extends AbstractCatalog {
 
     @Override
     protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
+        if (filter.equals(Filter.alwaysTrue())) {
+            return listTablesImpl(databaseName);
+        }
         throw new UnsupportedOperationException("listTables with filter is not supported.");
     }
 
