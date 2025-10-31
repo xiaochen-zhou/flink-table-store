@@ -54,6 +54,7 @@ import org.apache.paimon.table.Table;
 import org.apache.paimon.table.TableSnapshot;
 import org.apache.paimon.table.sink.BatchTableCommit;
 import org.apache.paimon.table.system.SystemTableLoader;
+import org.apache.paimon.utils.Filter;
 import org.apache.paimon.utils.Pair;
 import org.apache.paimon.view.View;
 import org.apache.paimon.view.ViewChange;
@@ -120,6 +121,11 @@ public class RESTCatalog implements Catalog {
     @Override
     public List<String> listDatabases() {
         return api.listDatabases();
+    }
+
+    @Override
+    public List<String> listDatabases(Filter<String> filter) {
+        throw new UnsupportedOperationException("listDatabases with filter is not supported.");
     }
 
     @Override
@@ -216,6 +222,12 @@ public class RESTCatalog implements Catalog {
         } catch (ForbiddenException e) {
             throw new DatabaseNoPermissionException(databaseName, e);
         }
+    }
+
+    @Override
+    public List<String> listTables(String databaseName, Filter<String> filter)
+            throws DatabaseNotExistException {
+        throw new UnsupportedOperationException("listTables with filter is not supported.");
     }
 
     @Override

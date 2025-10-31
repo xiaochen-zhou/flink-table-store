@@ -41,6 +41,7 @@ import org.apache.paimon.table.Table;
 import org.apache.paimon.table.TableSnapshot;
 import org.apache.paimon.table.sink.BatchTableCommit;
 import org.apache.paimon.table.system.SystemTableLoader;
+import org.apache.paimon.utils.Filter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -238,6 +239,12 @@ public abstract class AbstractCatalog implements Catalog {
 
     @Override
     public List<String> listTables(String databaseName) throws DatabaseNotExistException {
+        return listTables(databaseName, Filter.alwaysTrue());
+    }
+
+    @Override
+    public List<String> listTables(String databaseName, Filter<String> filter)
+            throws DatabaseNotExistException {
         if (isSystemDatabase(databaseName)) {
             return SystemTableLoader.loadGlobalTableNames();
         }
@@ -245,7 +252,7 @@ public abstract class AbstractCatalog implements Catalog {
         // check db exists
         getDatabase(databaseName);
 
-        return listTablesImpl(databaseName).stream().sorted().collect(Collectors.toList());
+        return listTablesImpl(databaseName, filter).stream().sorted().collect(Collectors.toList());
     }
 
     @Override
@@ -300,6 +307,8 @@ public abstract class AbstractCatalog implements Catalog {
     }
 
     protected abstract List<String> listTablesImpl(String databaseName);
+
+    protected abstract List<String> listTablesImpl(String databaseName, Filter<String> filter);
 
     protected PagedList<Table> listTableDetailsPagedImpl(
             String databaseName,
@@ -664,25 +673,42 @@ public abstract class AbstractCatalog implements Catalog {
     // =============================== Meta in File System =====================================
 
     protected List<String> listDatabasesInFileSystem(Path warehouse) throws IOException {
+        return listDatabasesInFileSystem(warehouse, Filter.alwaysTrue());
+    }
+
+    protected List<String> listDatabasesInFileSystem(Path warehouse, Filter<String> dbNameFilter)
+            throws IOException {
         List<String> databases = new ArrayList<>();
-        for (FileStatus status : fileIO.listDirectories(warehouse)) {
-            Path path = status.getPath();
-            if (status.isDir() && path.getName().endsWith(DB_SUFFIX)) {
-                String fileName = path.getName();
-                databases.add(fileName.substring(0, fileName.length() - DB_SUFFIX.length()));
-            }
+        Filter<FileStatus> fileStatusFilter =
+                status -> {
+                    String fileName = status.getPath().getName();
+                    return status.isDir()
+                            && fileName.endsWith(DB_SUFFIX)
+                            && dbNameFilter.test(
+                                    fileName.substring(0, fileName.length() - DB_SUFFIX.length()));
+                };
+
+        for (FileStatus status : fileIO.listDirectories(warehouse, fileStatusFilter)) {
+            String fileName = status.getPath().getName();
+            databases.add(fileName.substring(0, fileName.length() - DB_SUFFIX.length()));
         }
         return databases;
     }
 
     protected List<String> listTablesInFileSystem(Path databasePath) throws IOException {
-        List<String> tables = new ArrayList<>();
-        for (FileStatus status : fileIO.listDirectories(databasePath)) {
-            if (status.isDir() && tableExistsInFileSystem(status.getPath(), DEFAULT_MAIN_BRANCH)) {
-                tables.add(status.getPath().getName());
-            }
-        }
-        return tables;
+        return listTablesInFileSystem(databasePath, Filter.alwaysTrue());
+    }
+
+    protected List<String> listTablesInFileSystem(Path databasePath, Filter<String> filter)
+            throws IOException {
+        Filter<FileStatus> fileStatusFilter =
+                status ->
+                        status.isDir()
+                                && filter.test(status.getPath().getName())
+                                && tableExistsInFileSystem(status.getPath(), DEFAULT_MAIN_BRANCH);
+        return Arrays.stream(fileIO.listDirectories(databasePath, fileStatusFilter))
+                .map(status -> status.getPath().getName())
+                .collect(Collectors.toList());
     }
 
     protected boolean tableExistsInFileSystem(Path tablePath, String branchName) {

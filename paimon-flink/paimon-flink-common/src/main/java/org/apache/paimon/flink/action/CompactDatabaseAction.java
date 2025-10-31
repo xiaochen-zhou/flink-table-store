@@ -32,6 +32,7 @@ import org.apache.paimon.flink.source.CompactorSourceBuilder;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.Table;
+import org.apache.paimon.utils.Filter;
 import org.apache.paimon.utils.Preconditions;
 
 import org.apache.flink.api.common.RuntimeExecutionMode;
@@ -50,7 +51,6 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.apache.paimon.flink.sink.FlinkStreamPartitioner.partition;
@@ -148,33 +148,29 @@ public class CompactDatabaseAction extends ActionBase {
 
     private void buildForDividedMode() {
         try {
-            List<String> databases = catalog.listDatabases();
+            List<String> databases =
+                    catalog.listDatabases(
+                            databaseName -> databasePattern.matcher(databaseName).matches());
             for (String databaseName : databases) {
-                Matcher databaseMatcher = databasePattern.matcher(databaseName);
-                if (databaseMatcher.matches()) {
-                    List<String> tables = catalog.listTables(databaseName);
-                    for (String tableName : tables) {
-                        String fullTableName = String.format("%s.%s", databaseName, tableName);
-                        if (shouldCompactionTable(fullTableName)) {
-                            Table table =
-                                    catalog.getTable(Identifier.create(databaseName, tableName));
-                            if (!(table instanceof FileStoreTable)) {
-                                LOG.error(
-                                        String.format(
-                                                "Only FileStoreTable supports compact action. The table type is '%s'.",
-                                                table.getClass().getName()));
-                                continue;
-                            }
-                            Map<String, String> dynamicOptions =
-                                    new HashMap<>(tableOptions.toMap());
-                            dynamicOptions.put(CoreOptions.WRITE_ONLY.key(), "false");
-                            FileStoreTable fileStoreTable =
-                                    (FileStoreTable) table.copy(dynamicOptions);
-                            tableMap.put(fullTableName, fileStoreTable);
-                        } else {
-                            LOG.debug("The table {} is excluded.", fullTableName);
-                        }
+                Filter<String> tableFilter =
+                        tblName ->
+                                shouldCompactionTable(
+                                        String.format("%s.%s", databaseName, tblName));
+                List<String> tables = catalog.listTables(databaseName, tableFilter);
+                for (String tableName : tables) {
+                    Table table = catalog.getTable(Identifier.create(databaseName, tableName));
+                    if (!(table instanceof FileStoreTable)) {
+                        LOG.error(
+                                String.format(
+                                        "Only FileStoreTable supports compact action. The table type is '%s'.",
+                                        table.getClass().getName()));
+                        continue;
                     }
+                    String fullTableName = String.format("%s.%s", databaseName, tableName);
+                    Map<String, String> dynamicOptions = new HashMap<>(tableOptions.toMap());
+                    dynamicOptions.put(CoreOptions.WRITE_ONLY.key(), "false");
+                    FileStoreTable fileStoreTable = (FileStoreTable) table.copy(dynamicOptions);
+                    tableMap.put(fullTableName, fileStoreTable);
                 }
             }
         } catch (Catalog.DatabaseNotExistException | Catalog.TableNotExistException e) {

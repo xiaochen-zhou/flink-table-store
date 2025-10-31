@@ -82,6 +82,17 @@ public class JdbcUtils {
                     + TABLE_DATABASE
                     + " = ?";
 
+    static final String LIST_TABLES_SQL_WITH_FILTER =
+            "SELECT * FROM "
+                    + CATALOG_TABLE_NAME
+                    + " WHERE "
+                    + CATALOG_KEY
+                    + " = ? AND "
+                    + TABLE_DATABASE
+                    + " = ?  AND "
+                    + TABLE_NAME
+                    + " LIKE ?";
+
     static final String DELETE_TABLES_SQL =
             "DELETE FROM  "
                     + CATALOG_TABLE_NAME

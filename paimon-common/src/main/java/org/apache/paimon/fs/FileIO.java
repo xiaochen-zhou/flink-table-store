@@ -22,6 +22,7 @@ import org.apache.paimon.annotation.Public;
 import org.apache.paimon.catalog.CatalogContext;
 import org.apache.paimon.fs.hadoop.HadoopFileIOLoader;
 import org.apache.paimon.fs.local.LocalFileIO;
+import org.apache.paimon.utils.Filter;
 
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
@@ -201,9 +202,17 @@ public interface FileIO extends Serializable, Closeable {
      * @return the statuses of the directories in the given path
      */
     default FileStatus[] listDirectories(Path path) throws IOException {
+        return listDirectories(path, Filter.alwaysTrue());
+    }
+
+    default FileStatus[] listDirectories(Path path, Filter<FileStatus> filter) throws IOException {
         FileStatus[] statuses = listStatus(path);
         if (statuses != null) {
-            statuses = Arrays.stream(statuses).filter(FileStatus::isDir).toArray(FileStatus[]::new);
+            statuses =
+                    Arrays.stream(statuses)
+                            .filter(FileStatus::isDir)
+                            .filter(filter::test)
+                            .toArray(FileStatus[]::new);
         }
         return statuses;
     }

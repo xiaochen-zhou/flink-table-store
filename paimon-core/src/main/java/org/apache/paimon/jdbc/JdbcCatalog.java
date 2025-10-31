@@ -36,6 +36,7 @@ import org.apache.paimon.schema.Schema;
 import org.apache.paimon.schema.SchemaChange;
 import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.schema.TableSchema;
+import org.apache.paimon.utils.Filter;
 import org.apache.paimon.utils.Pair;
 import org.apache.paimon.utils.Preconditions;
 
@@ -176,6 +177,11 @@ public class JdbcCatalog extends AbstractCatalog {
     }
 
     @Override
+    public List<String> listDatabases(Filter<String> filter) {
+        return listDatabases().stream().filter(filter::test).collect(Collectors.toList());
+    }
+
+    @Override
     protected Database getDatabaseImpl(String databaseName) throws DatabaseNotExistException {
         if (!JdbcUtils.databaseExists(connections, catalogKey, databaseName)) {
             throw new DatabaseNotExistException(databaseName);
@@ -258,6 +264,11 @@ public class JdbcCatalog extends AbstractCatalog {
                 JdbcUtils.LIST_TABLES_SQL,
                 catalogKey,
                 databaseName);
+    }
+
+    @Override
+    protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
+        throw new UnsupportedOperationException("listTables with filter is not supported.");
     }
 
     @Override

@@ -29,6 +29,7 @@ import org.apache.paimon.schema.SchemaChange;
 import org.apache.paimon.table.Instant;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.table.TableSnapshot;
+import org.apache.paimon.utils.Filter;
 import org.apache.paimon.view.View;
 import org.apache.paimon.view.ViewChange;
 
@@ -67,6 +68,11 @@ public abstract class DelegateCatalog implements Catalog {
     }
 
     @Override
+    public List<String> listDatabases(Filter<String> databaseNameFilter) {
+        return wrapped.listDatabases(databaseNameFilter);
+    }
+
+    @Override
     public PagedList<String> listDatabasesPaged(
             Integer maxResults, String pageToken, String databaseNamePattern) {
         return wrapped.listDatabasesPaged(maxResults, pageToken, databaseNamePattern);
@@ -98,6 +104,12 @@ public abstract class DelegateCatalog implements Catalog {
     @Override
     public List<String> listTables(String databaseName) throws DatabaseNotExistException {
         return wrapped.listTables(databaseName);
+    }
+
+    @Override
+    public List<String> listTables(String databaseName, Filter<String> tableNameFilter)
+            throws DatabaseNotExistException {
+        return wrapped.listTables(databaseName, tableNameFilter);
     }
 
     @Override

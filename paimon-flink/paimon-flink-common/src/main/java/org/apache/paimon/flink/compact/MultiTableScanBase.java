@@ -26,6 +26,7 @@ import org.apache.paimon.table.FileStoreTable;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.table.source.EndOfScanException;
 import org.apache.paimon.table.source.Split;
+import org.apache.paimon.utils.Filter;
 
 import org.apache.flink.api.connector.source.ReaderOutput;
 import org.slf4j.Logger;
@@ -80,28 +81,30 @@ public abstract class MultiTableScanBase<T> implements AutoCloseable {
 
     protected void updateTableMap()
             throws Catalog.DatabaseNotExistException, Catalog.TableNotExistException {
-        List<String> databases = catalog.listDatabases();
+        List<String> databases =
+                catalog.listDatabases(
+                        databaseName -> databasePattern.matcher(databaseName).matches());
 
         for (String databaseName : databases) {
-            if (databasePattern.matcher(databaseName).matches()) {
-                List<String> tables = catalog.listTables(databaseName);
-                for (String tableName : tables) {
-                    Identifier identifier = Identifier.create(databaseName, tableName);
-                    if (shouldCompactTable(identifier, includingPattern, excludingPattern)
-                            && (!checkTableScanned(identifier))) {
-                        Table table = catalog.getTable(identifier);
-                        if (!(table instanceof FileStoreTable)) {
-                            LOG.error(
-                                    String.format(
-                                            "Only FileStoreTable supports compact action. The table type is '%s'.",
-                                            table.getClass().getName()));
-                            continue;
-                        }
-
-                        FileStoreTable fileStoreTable = ((FileStoreTable) table).copy(tableOptions);
-                        addScanTable(fileStoreTable, identifier);
-                    }
+            Filter<String> tableFilter =
+                    tblName -> {
+                        Identifier identifier = Identifier.create(databaseName, tblName);
+                        return shouldCompactTable(identifier, includingPattern, excludingPattern)
+                                && (!checkTableScanned(identifier));
+                    };
+            List<String> tables = catalog.listTables(databaseName, tableFilter);
+            for (String tableName : tables) {
+                Identifier identifier = Identifier.create(databaseName, tableName);
+                Table table = catalog.getTable(identifier);
+                if (!(table instanceof FileStoreTable)) {
+                    LOG.error(
+                            "Only FileStoreTable supports compact action. The table type is '{}'.",
+                            table.getClass().getName());
+                    continue;
                 }
+
+                FileStoreTable fileStoreTable = ((FileStoreTable) table).copy(tableOptions);
+                addScanTable(fileStoreTable, identifier);
             }
         }
     }

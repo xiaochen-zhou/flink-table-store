@@ -25,6 +25,7 @@ import org.apache.paimon.schema.Schema;
 import org.apache.paimon.schema.SchemaChange;
 import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.schema.TableSchema;
+import org.apache.paimon.utils.Filter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +57,11 @@ public class FileSystemCatalog extends AbstractCatalog {
     @Override
     public List<String> listDatabases() {
         return uncheck(() -> listDatabasesInFileSystem(warehouse));
+    }
+
+    @Override
+    public List<String> listDatabases(Filter<String> filter) {
+        return uncheck(() -> listDatabasesInFileSystem(warehouse, filter));
     }
 
     @Override
@@ -106,7 +112,12 @@ public class FileSystemCatalog extends AbstractCatalog {
 
     @Override
     protected List<String> listTablesImpl(String databaseName) {
-        return uncheck(() -> listTablesInFileSystem(newDatabasePath(databaseName)));
+        return listTablesImpl(databaseName, Filter.alwaysTrue());
+    }
+
+    @Override
+    protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
+        return uncheck(() -> listTablesInFileSystem(newDatabasePath(databaseName), filter));
     }
 
     @Override

@@ -50,6 +50,7 @@ import org.apache.paimon.table.FormatTable;
 import org.apache.paimon.types.DataField;
 import org.apache.paimon.types.DataTypes;
 import org.apache.paimon.types.RowType;
+import org.apache.paimon.utils.Filter;
 import org.apache.paimon.utils.InternalRowPartitionComputer;
 import org.apache.paimon.utils.Pair;
 import org.apache.paimon.utils.PartitionPathUtils;
@@ -269,8 +270,15 @@ public class HiveCatalog extends AbstractCatalog {
 
     @Override
     public List<String> listDatabases() {
+        return listDatabases(Filter.alwaysTrue());
+    }
+
+    @Override
+    public List<String> listDatabases(Filter<String> nameFilter) {
         try {
-            return clients.run(IMetaStoreClient::getAllDatabases);
+            return clients.run(IMetaStoreClient::getAllDatabases).stream()
+                    .filter(nameFilter::test)
+                    .collect(Collectors.toList());
         } catch (TException e) {
             throw new RuntimeException("Failed to list all databases", e);
         } catch (InterruptedException e) {
@@ -638,8 +646,16 @@ public class HiveCatalog extends AbstractCatalog {
 
     @Override
     protected List<String> listTablesImpl(String databaseName) {
+        return listTablesImpl(databaseName, Filter.alwaysTrue());
+    }
+
+    @Override
+    protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
         try {
-            List<String> tableNames = clients.run(client -> client.getAllTables(databaseName));
+            List<String> tableNames =
+                    clients.run(client -> client.getAllTables(databaseName)).stream()
+                            .filter(filter::test)
+                            .collect(Collectors.toList());
             int batchSize = getBatchGetTableSize();
             List<Table> hmsTables =
                     Lists.partition(tableNames, batchSize).stream()
