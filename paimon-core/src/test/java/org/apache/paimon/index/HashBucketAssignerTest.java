@@ -21,7 +21,9 @@ package org.apache.paimon.index;
 import org.apache.paimon.catalog.PrimaryKeyTableTestBase;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.io.CompactIncrement;
+import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataIncrement;
+import org.apache.paimon.stats.SimpleStats;
 import org.apache.paimon.table.sink.CommitMessage;
 import org.apache.paimon.table.sink.CommitMessageImpl;
 import org.apache.paimon.table.sink.StreamTableCommit;
@@ -35,6 +37,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.UUID;
 
 import static org.apache.paimon.io.DataFileTestUtils.row;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,6 +82,25 @@ public class HashBucketAssignerTest extends PrimaryKeyTableTestBase {
                 numAssigners,
                 assignId,
                 5,
+                maxBucketsNum);
+    }
+
+    private HashBucketAssigner createAssigner(
+            int numChannels,
+            int numAssigners,
+            int assignId,
+            long targetBucketRowNumber,
+            long targetBucketSize,
+            int maxBucketsNum) {
+        return new HashBucketAssigner(
+                table.snapshotManager(),
+                commitUser,
+                fileHandler,
+                numChannels,
+                numAssigners,
+                assignId,
+                targetBucketRowNumber,
+                targetBucketSize,
                 maxBucketsNum);
     }
 
@@ -362,5 +384,331 @@ public class HashBucketAssignerTest extends PrimaryKeyTableTestBase {
 
         assigner.prepareCommit(3);
         assertThat(assigner.currentPartitions()).isEmpty();
+    }
+
+    @Test
+    public void testAssignWithTargetBucketSize() throws IOException {
+        // Commit initial data: bucket 0 with 100 bytes
+        commit.commit(
+                0,
+                Collections.singletonList(
+                        createCommitMessageWithDataFiles(
+                                row(1),
+                                0,
+                                3,
+                                fileHandler.hashIndex(row(1), 0).write(new int[] {2, 5}),
+                                createDataFileMetaOfSize(100L))));
+
+        // Create assigner with targetBucketSize=150 bytes
+        HashBucketAssigner assigner = createAssigner(3, 3, 0, 5, 150L, -1);
+
+        // Read assigned - should go to bucket 0 (size=100 < 150)
+        assertThat(assigner.assign(row(1), 2)).isEqualTo(0);
+        assertThat(assigner.assign(row(1), 5)).isEqualTo(0);
+
+        commit.commit(
+                1,
+                Collections.singletonList(
+                        createCommitMessageWithDataFiles(
+                                row(1),
+                                0,
+                                3,
+                                fileHandler.hashIndex(row(1), 0).write(new int[] {2, 5, 8}),
+                                createDataFileMetaOfSize(80L))));
+        HashBucketAssigner assigner2 = createAssigner(3, 3, 0, 5, 150L, -1);
+        assertThat(assigner2.assign(row(1), 11)).isEqualTo(3);
+    }
+
+    @Test
+    public void testBucketSizeWithMultipleBuckets() throws IOException {
+        // Commit data to bucket 0 (100 bytes) and bucket 2 (80 bytes)
+        commit.commit(
+                0,
+                Arrays.asList(
+                        createCommitMessageWithDataFiles(
+                                row(1),
+                                0,
+                                3,
+                                fileHandler.hashIndex(row(1), 0).write(new int[] {2, 5}),
+                                createDataFileMetaOfSize(100L)),
+                        createCommitMessageWithDataFiles(
+                                row(1),
+                                2,
+                                3,
+                                fileHandler.hashIndex(row(1), 2).write(new int[] {4, 7}),
+                                createDataFileMetaOfSize(80L))));
+
+        // Create assigner with targetBucketSize=90 bytes
+        HashBucketAssigner assigner0 = createAssigner(3, 3, 0, 5, 90L, -1);
+        HashBucketAssigner assigner2 = createAssigner(3, 3, 2, 5, 90L, -1);
+
+        // Bucket 0 (100 bytes) exceeds limit, new hash should go to new bucket
+        assertThat(assigner0.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner0.assign(row(1), 8)).isEqualTo(3); // new hash, new bucket
+
+        // Bucket 2 (80 bytes) is under limit, new hash can go to bucket 2
+        assertThat(assigner2.assign(row(1), 4)).isEqualTo(2); // existing hash
+        assertThat(assigner2.assign(row(1), 10)).isEqualTo(2); // new hash, same bucket
+    }
+
+    private DataFileMeta createDataFileMetaOfSize(long sizeBytes) {
+        return DataFileMeta.forAppend(
+                UUID.randomUUID().toString(),
+                sizeBytes,
+                0,
+                SimpleStats.EMPTY_STATS,
+                0,
+                0,
+                1,
+                Collections.emptyList(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    private CommitMessage createCommitMessageWithDataFiles(
+            BinaryRow partition,
+            int bucket,
+            int totalBuckets,
+            IndexFileMeta indexFile,
+            DataFileMeta... dataFiles) {
+        return new CommitMessageImpl(
+                partition,
+                bucket,
+                totalBuckets,
+                new DataIncrement(
+                        Arrays.asList(dataFiles),
+                        Collections.emptyList(),
+                        Collections.emptyList(),
+                        Collections.singletonList(indexFile),
+                        Collections.emptyList()),
+                new CompactIncrement(
+                        Collections.emptyList(), Collections.emptyList(), Collections.emptyList()));
+    }
+
+    /**
+     * Test that bucket size is updated after compaction without new hash index.
+     *
+     * <p>This test demonstrates the scenario where {@code ensureBucketSizeUpdates()} is necessary:
+     *
+     * <ul>
+     *   <li>Initial state: bucket 0 has 3 files totaling 300 bytes
+     *   <li>After compaction: 3 files merged into 1 file of 100 bytes (compression effect)
+     *   <li>No new hash index is created (no new keys)
+     *   <li>Without {@code ensureBucketSizeUpdates()}, bucketSize would remain 300 bytes
+     *   <li>With {@code ensureBucketSizeUpdates()}, bucketSize is correctly updated to 100 bytes
+     * </ul>
+     */
+    @Test
+    public void testBucketSizeUpdateAfterCompactionWithoutNewIndex() throws IOException {
+        // Step 1: Commit initial data - 3 files totaling 300 bytes
+        DataFileMeta file1 = createDataFileMetaOfSize(100L);
+        DataFileMeta file2 = createDataFileMetaOfSize(100L);
+        DataFileMeta file3 = createDataFileMetaOfSize(100L);
+
+        commit.commit(
+                0,
+                Collections.singletonList(
+                        createCommitMessageWithDataFiles(
+                                row(1),
+                                0,
+                                3,
+                                fileHandler.hashIndex(row(1), 0).write(new int[] {2, 5, 8}),
+                                file1,
+                                file2,
+                                file3)));
+
+        // Step 2: Create assigner with targetBucketSize=150 bytes
+        HashBucketAssigner assigner1 = createAssigner(3, 3, 0, 5, 150L, -1);
+
+        // Bucket 0 has 300 bytes, exceeds limit (150), new hash should create new bucket
+        assertThat(assigner1.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner1.assign(row(1), 11)).isEqualTo(3); // new hash, new bucket
+
+        // Step 3: Simulate compaction - 3 files merged into 1 file (100 bytes)
+        // No new hash index because no new keys were added during compaction
+        DataFileMeta compactedFile = createDataFileMetaOfSize(100L);
+        CommitMessage compactionMessage =
+                new CommitMessageImpl(
+                        row(1),
+                        0,
+                        3,
+                        DataIncrement.emptyIncrement(),
+                        new CompactIncrement(
+                                Arrays.asList(file1, file2, file3), // Use same file objects
+                                Collections.singletonList(compactedFile),
+                                Collections.emptyList(),
+                                Collections.emptyList(), // No new index files!
+                                Collections.emptyList()));
+
+        commit.commit(1, Collections.singletonList(compactionMessage));
+
+        // Step 4: Create new assigner after compaction
+        HashBucketAssigner assigner2 = createAssigner(3, 3, 0, 5, 150L, -1);
+
+        // Now bucket 0 has only 100 bytes (< 150), new hash should go to bucket 0
+        // This proves that ensureBucketSizeUpdates() correctly updated bucketSize
+        assertThat(assigner2.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner2.assign(row(1), 14)).isEqualTo(0); // new hash, same bucket (size OK)
+    }
+
+    /**
+     * Test that bucket size is updated after DELETE operations without new hash index.
+     *
+     * <p>This test demonstrates another scenario where {@code ensureBucketSizeUpdates()} is
+     * necessary:
+     *
+     * <ul>
+     *   <li>Initial state: bucket 0 has 2 files totaling 200 bytes
+     *   <li>After DELETE: 1 file deleted, remaining 100 bytes
+     *   <li>No new hash index is created
+     *   <li>bucketSize should be updated from 200 to 100 bytes
+     * </ul>
+     */
+    @Test
+    public void testBucketSizeUpdateAfterDeleteWithoutNewIndex() throws IOException {
+        // Step 1: Commit initial data - 2 files totaling 200 bytes
+        DataFileMeta file1 = createDataFileMetaOfSize(100L);
+        DataFileMeta file2 = createDataFileMetaOfSize(100L);
+
+        commit.commit(
+                0,
+                Collections.singletonList(
+                        createCommitMessageWithDataFiles(
+                                row(1),
+                                0,
+                                3,
+                                fileHandler.hashIndex(row(1), 0).write(new int[] {2, 5}),
+                                file1,
+                                file2)));
+
+        // Step 2: Create assigner with targetBucketSize=150 bytes
+        HashBucketAssigner assigner1 = createAssigner(3, 3, 0, 5, 150L, -1);
+
+        // Bucket 0 has 200 bytes, exceeds limit (150)
+        assertThat(assigner1.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner1.assign(row(1), 8)).isEqualTo(3); // new hash, new bucket
+
+        // Step 3: Delete one file (no new hash index)
+        CommitMessage deleteMessage =
+                new CommitMessageImpl(
+                        row(1),
+                        0,
+                        3,
+                        new DataIncrement(
+                                Collections.emptyList(),
+                                Collections.singletonList(file1), // Delete file1
+                                Collections.emptyList(),
+                                Collections.emptyList(), // No new index files!
+                                Collections.emptyList()),
+                        CompactIncrement.emptyIncrement());
+
+        commit.commit(1, Collections.singletonList(deleteMessage));
+
+        // Step 4: Create new assigner after deletion
+        HashBucketAssigner assigner2 = createAssigner(3, 3, 0, 5, 150L, -1);
+
+        // Now bucket 0 has only 100 bytes (< 150), new hash should go to bucket 0
+        assertThat(assigner2.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner2.assign(row(1), 11)).isEqualTo(0); // new hash, same bucket (size OK)
+    }
+
+    /**
+     * Test that bucket size is updated correctly during full compaction.
+     *
+     * <p>This test demonstrates full compaction scenario:
+     *
+     * <ul>
+     *   <li>Initial state: bucket 0 has many small files totaling 500 bytes
+     *   <li>After full compaction: rewritten to fewer large files totaling 450 bytes (deduplication
+     *       + compression)
+     *   <li>No new keys, so no new hash index
+     *   <li>bucketSize should be updated from 500 to 450 bytes
+     * </ul>
+     */
+    @Test
+    public void testBucketSizeUpdateAfterFullCompaction() throws IOException {
+        // Step 1: Commit initial data - 5 files totaling 500 bytes
+        DataFileMeta file1 = createDataFileMetaOfSize(100L);
+        DataFileMeta file2 = createDataFileMetaOfSize(100L);
+        DataFileMeta file3 = createDataFileMetaOfSize(100L);
+        DataFileMeta file4 = createDataFileMetaOfSize(100L);
+        DataFileMeta file5 = createDataFileMetaOfSize(100L);
+
+        commit.commit(
+                0,
+                Collections.singletonList(
+                        createCommitMessageWithDataFiles(
+                                row(1),
+                                0,
+                                3,
+                                fileHandler.hashIndex(row(1), 0).write(new int[] {2, 5, 8}),
+                                file1,
+                                file2,
+                                file3,
+                                file4,
+                                file5)));
+
+        // Step 2: Create assigner with targetBucketSize=400 bytes
+        HashBucketAssigner assigner1 = createAssigner(3, 3, 0, 5, 400L, -1);
+
+        // Bucket 0 has 500 bytes, exceeds limit (400)
+        assertThat(assigner1.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner1.assign(row(1), 11)).isEqualTo(3); // new hash, new bucket
+
+        // Step 3: Full compaction - 5 files merged into 2 files (450 bytes total)
+        // Simulates deduplication and compression
+        DataFileMeta compacted1 = createDataFileMetaOfSize(250L);
+        DataFileMeta compacted2 = createDataFileMetaOfSize(200L);
+
+        CommitMessage compactionMessage =
+                new CommitMessageImpl(
+                        row(1),
+                        0,
+                        3,
+                        DataIncrement.emptyIncrement(),
+                        new CompactIncrement(
+                                Arrays.asList(file1, file2, file3, file4, file5),
+                                Arrays.asList(compacted1, compacted2),
+                                Collections.emptyList(),
+                                Collections.emptyList(), // No new index files!
+                                Collections.emptyList()));
+
+        commit.commit(1, Collections.singletonList(compactionMessage));
+
+        // Step 4: Create new assigner after full compaction
+        HashBucketAssigner assigner2 = createAssigner(3, 3, 0, 5, 400L, -1);
+
+        // Now bucket 0 has 450 bytes, still exceeds limit (400)
+        assertThat(assigner2.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner2.assign(row(1), 14)).isEqualTo(3); // new hash, still new bucket
+
+        // Step 5: Another compaction to reduce size below limit
+        DataFileMeta compacted3 = createDataFileMetaOfSize(350L);
+
+        CommitMessage compactionMessage2 =
+                new CommitMessageImpl(
+                        row(1),
+                        0,
+                        3,
+                        DataIncrement.emptyIncrement(),
+                        new CompactIncrement(
+                                Arrays.asList(compacted1, compacted2),
+                                Collections.singletonList(compacted3),
+                                Collections.emptyList(),
+                                Collections.emptyList(), // No new index files!
+                                Collections.emptyList()));
+
+        commit.commit(2, Collections.singletonList(compactionMessage2));
+
+        // Step 6: Create new assigner after second compaction
+        HashBucketAssigner assigner3 = createAssigner(3, 3, 0, 5, 400L, -1);
+
+        // Now bucket 0 has 350 bytes (< 400), new hash should go to bucket 0
+        assertThat(assigner3.assign(row(1), 2)).isEqualTo(0); // existing hash
+        assertThat(assigner3.assign(row(1), 17)).isEqualTo(0); // new hash, same bucket (size OK)
     }
 }

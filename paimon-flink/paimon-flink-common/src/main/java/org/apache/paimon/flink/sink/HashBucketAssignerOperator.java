@@ -78,20 +78,25 @@ public class HashBucketAssignerOperator<T> extends AbstractStreamOperator<Tuple2
         int numberTasks = RuntimeContextUtils.getNumberOfParallelSubtasks(getRuntimeContext());
         int taskId = RuntimeContextUtils.getIndexOfThisSubtask(getRuntimeContext());
         long targetRowNum = table.coreOptions().dynamicBucketTargetRowNum();
+        long targetBucketSize = table.coreOptions().dynamicBucketTargetSize().getBytes();
         Integer maxBucketsNum = table.coreOptions().dynamicBucketMaxBuckets();
-        this.assigner =
-                overwrite
-                        ? new SimpleHashBucketAssigner(
-                                numberTasks, taskId, targetRowNum, maxBucketsNum)
-                        : new HashBucketAssigner(
-                                table.snapshotManager(),
-                                commitUser,
-                                table.store().newIndexFileHandler(),
-                                numberTasks,
-                                MathUtils.min(numAssigners, numberTasks),
-                                taskId,
-                                targetRowNum,
-                                maxBucketsNum);
+
+        if (overwrite) {
+            this.assigner =
+                    new SimpleHashBucketAssigner(numberTasks, taskId, targetRowNum, maxBucketsNum);
+        } else {
+            this.assigner =
+                    new HashBucketAssigner(
+                            table.snapshotManager(),
+                            commitUser,
+                            table.store().newIndexFileHandler(),
+                            numberTasks,
+                            MathUtils.min(numAssigners, numberTasks),
+                            taskId,
+                            targetRowNum,
+                            targetBucketSize,
+                            maxBucketsNum);
+        }
         this.extractor = extractorFunction.apply(table.schema());
     }
 

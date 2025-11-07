@@ -1271,6 +1271,15 @@ public class CoreOptions implements Serializable {
                             "If the bucket is -1, for primary key table, is dynamic bucket mode, "
                                     + "this option controls the target row number for one bucket.");
 
+    public static final ConfigOption<MemorySize> DYNAMIC_BUCKET_TARGET_SIZE =
+            key("dynamic-bucket.target-size")
+                    .memoryType()
+                    .defaultValue(MemorySize.ofMebiBytes(128))
+                    .withDescription(
+                            "If the bucket is -1, for primary key table, is dynamic bucket mode, "
+                                    + "this option controls the target size for one bucket. When a bucket "
+                                    + "reaches this size, a new bucket will be created. Set to 0 to disable size-based bucket creation.");
+
     public static final ConfigOption<Integer> DYNAMIC_BUCKET_INITIAL_BUCKETS =
             key("dynamic-bucket.initial-buckets")
                     .intType()
@@ -2584,6 +2593,10 @@ public class CoreOptions implements Serializable {
 
     public long dynamicBucketTargetRowNum() {
         return options.get(DYNAMIC_BUCKET_TARGET_ROW_NUM);
+    }
+
+    public MemorySize dynamicBucketTargetSize() {
+        return options.get(DYNAMIC_BUCKET_TARGET_SIZE);
     }
 
     public ChangelogProducer changelogProducer() {

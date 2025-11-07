@@ -25,6 +25,8 @@ import org.apache.paimon.annotation.VisibleForTesting;
 import org.apache.paimon.catalog.SnapshotCommit;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.fs.FileIO;
+import org.apache.paimon.index.HashIndexFile;
+import org.apache.paimon.index.IndexFileMeta;
 import org.apache.paimon.io.DataFileMeta;
 import org.apache.paimon.io.DataFilePathFactory;
 import org.apache.paimon.manifest.FileEntry;
@@ -717,19 +719,31 @@ public class FileStoreCommitImpl implements FileStoreCommit {
             List<ManifestEntry> compactTableFiles,
             List<ManifestEntry> compactChangelog,
             List<IndexManifestEntry> compactIndexFiles) {
+        Map<Pair<BinaryRow, Integer>, Long> latestSizes = loadLatestBucketSizes();
+        Set<Pair<BinaryRow, Integer>> compactionBuckets = new HashSet<>();
+
         for (CommitMessage message : commitMessages) {
             CommitMessageImpl commitMessage = (CommitMessageImpl) message;
+            Pair<BinaryRow, Integer> key =
+                    Pair.of(commitMessage.partition(), commitMessage.bucket());
             commitMessage
                     .newFilesIncrement()
                     .newFiles()
-                    .forEach(m -> appendTableFiles.add(makeEntry(FileKind.ADD, commitMessage, m)));
+                    .forEach(
+                            m -> {
+                                appendTableFiles.add(makeEntry(FileKind.ADD, commitMessage, m));
+                                latestSizes.compute(
+                                        key, (k, v) -> (v == null ? 0L : v) + m.fileSize());
+                            });
             commitMessage
                     .newFilesIncrement()
                     .deletedFiles()
                     .forEach(
-                            m ->
-                                    appendTableFiles.add(
-                                            makeEntry(FileKind.DELETE, commitMessage, m)));
+                            m -> {
+                                appendTableFiles.add(makeEntry(FileKind.DELETE, commitMessage, m));
+                                latestSizes.compute(
+                                        key, (k, v) -> (v == null ? 0L : v) - m.fileSize());
+                            });
             commitMessage
                     .newFilesIncrement()
                     .changelogFiles()
@@ -740,34 +754,42 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                     .forEach(
                             m ->
                                     appendIndexFiles.add(
-                                            new IndexManifestEntry(
+                                            createIndexManifestEntry(
                                                     FileKind.DELETE,
-                                                    commitMessage.partition(),
-                                                    commitMessage.bucket(),
-                                                    m)));
-            commitMessage
-                    .newFilesIncrement()
-                    .newIndexFiles()
-                    .forEach(
-                            m ->
-                                    appendIndexFiles.add(
-                                            new IndexManifestEntry(
-                                                    FileKind.ADD,
-                                                    commitMessage.partition(),
-                                                    commitMessage.bucket(),
-                                                    m)));
+                                                    commitMessage,
+                                                    m,
+                                                    latestSizes)));
 
             commitMessage
                     .compactIncrement()
                     .compactBefore()
                     .forEach(
-                            m ->
-                                    compactTableFiles.add(
-                                            makeEntry(FileKind.DELETE, commitMessage, m)));
+                            m -> {
+                                compactionBuckets.add(key);
+                                compactTableFiles.add(makeEntry(FileKind.DELETE, commitMessage, m));
+                                latestSizes.compute(
+                                        key, (k, v) -> (v == null ? 0L : v) - m.fileSize());
+                            });
+
+            commitMessage
+                    .newFilesIncrement()
+                    .newIndexFiles()
+                    .forEach(
+                            m -> {
+                                appendIndexFiles.add(
+                                        createIndexManifestEntry(
+                                                FileKind.ADD, commitMessage, m, latestSizes));
+                                compactionBuckets.remove(key);
+                            });
             commitMessage
                     .compactIncrement()
                     .compactAfter()
-                    .forEach(m -> compactTableFiles.add(makeEntry(FileKind.ADD, commitMessage, m)));
+                    .forEach(
+                            m -> {
+                                compactTableFiles.add(makeEntry(FileKind.ADD, commitMessage, m));
+                                latestSizes.compute(
+                                        key, (k, v) -> (v == null ? 0L : v) + m.fileSize());
+                            });
             commitMessage
                     .compactIncrement()
                     .changelogFiles()
@@ -778,23 +800,27 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                     .forEach(
                             m ->
                                     compactIndexFiles.add(
-                                            new IndexManifestEntry(
+                                            createIndexManifestEntry(
                                                     FileKind.DELETE,
-                                                    commitMessage.partition(),
-                                                    commitMessage.bucket(),
-                                                    m)));
+                                                    commitMessage,
+                                                    m,
+                                                    latestSizes)));
             commitMessage
                     .compactIncrement()
                     .newIndexFiles()
                     .forEach(
-                            m ->
-                                    compactIndexFiles.add(
-                                            new IndexManifestEntry(
-                                                    FileKind.ADD,
-                                                    commitMessage.partition(),
-                                                    commitMessage.bucket(),
-                                                    m)));
+                            m -> {
+                                compactIndexFiles.add(
+                                        createIndexManifestEntry(
+                                                FileKind.ADD, commitMessage, m, latestSizes));
+                                compactionBuckets.remove(key);
+                            });
         }
+
+        if (!compactionBuckets.isEmpty()) {
+            ensureBucketSizeUpdates(latestSizes, compactionBuckets, appendIndexFiles);
+        }
+
         if (!commitMessages.isEmpty()) {
             List<String> msg = new ArrayList<>();
             if (!appendTableFiles.isEmpty()) {
@@ -816,6 +842,91 @@ public class FileStoreCommitImpl implements FileStoreCommit {
                 msg.add(compactIndexFiles.size() + " compact index files");
             }
             LOG.info("Finished collecting changes, including: {}", String.join(", ", msg));
+        }
+    }
+
+    private IndexManifestEntry createIndexManifestEntry(
+            FileKind kind,
+            CommitMessageImpl commitMessage,
+            IndexFileMeta indexFile,
+            Map<Pair<BinaryRow, Integer>, Long> bucketSizes) {
+        Long bucketSize = null;
+        if (HashIndexFile.HASH_INDEX.equals(indexFile.indexType())) {
+            Pair<BinaryRow, Integer> key =
+                    Pair.of(commitMessage.partition(), commitMessage.bucket());
+            bucketSize = bucketSizes.get(key);
+        }
+        return new IndexManifestEntry(
+                kind, commitMessage.partition(), commitMessage.bucket(), indexFile, bucketSize);
+    }
+
+    private Map<Pair<BinaryRow, Integer>, Long> loadLatestBucketSizes() {
+        Map<Pair<BinaryRow, Integer>, Long> bucketSizes = new HashMap<>();
+        Snapshot latestSnapshot = snapshotManager.latestSnapshot();
+        if (latestSnapshot != null && latestSnapshot.indexManifest() != null) {
+            try {
+                List<IndexManifestEntry> indexEntries =
+                        indexManifestFile.read(latestSnapshot.indexManifest());
+                for (IndexManifestEntry entry : indexEntries) {
+                    if (HashIndexFile.HASH_INDEX.equals(entry.indexFile().indexType())
+                            && entry.bucketSize() != null) {
+                        Pair<BinaryRow, Integer> key = Pair.of(entry.partition(), entry.bucket());
+                        bucketSizes.put(key, entry.bucketSize());
+                    }
+                }
+            } catch (Exception e) {
+                LOG.error("Failed to load hash index files for snapshot", e);
+            }
+        }
+        return bucketSizes;
+    }
+
+    /**
+     * For buckets with compaction but no new index files, create IndexManifestEntry to update
+     * bucketSize. This ensures bucketSize is always up-to-date even when compaction happens without
+     * new keys.
+     */
+    private void ensureBucketSizeUpdates(
+            Map<Pair<BinaryRow, Integer>, Long> latestSizes,
+            Set<Pair<BinaryRow, Integer>> bucketsNeedingSizeUpdate,
+            List<IndexManifestEntry> appendIndexFiles) {
+
+        Snapshot latestSnapshot = snapshotManager.latestSnapshot();
+        if (latestSnapshot == null || latestSnapshot.indexManifest() == null) {
+            return;
+        }
+        Map<Pair<BinaryRow, Integer>, IndexManifestEntry> existingHashIndexes = new HashMap<>();
+        try {
+            List<IndexManifestEntry> indexEntries =
+                    indexManifestFile.read(latestSnapshot.indexManifest());
+            for (IndexManifestEntry entry : indexEntries) {
+                if (HashIndexFile.HASH_INDEX.equals(entry.indexFile().indexType())) {
+                    Pair<BinaryRow, Integer> key = Pair.of(entry.partition(), entry.bucket());
+                    existingHashIndexes.put(key, entry);
+                }
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to load hash index files for snapshot", e);
+            return;
+        }
+
+        for (Pair<BinaryRow, Integer> key : bucketsNeedingSizeUpdate) {
+            IndexManifestEntry latestEntry = existingHashIndexes.get(key);
+            if (latestEntry == null) {
+                continue;
+            }
+            Long newSize = latestSizes.get(key);
+            if (Objects.equals(latestEntry.bucketSize(), newSize)) {
+                continue;
+            }
+
+            appendIndexFiles.add(
+                    new IndexManifestEntry(
+                            FileKind.ADD,
+                            latestEntry.partition(),
+                            latestEntry.bucket(),
+                            latestEntry.indexFile(),
+                            newSize));
         }
     }
 

@@ -45,6 +45,7 @@ public class HashBucketAssigner implements BucketAssigner {
     private final int numAssigners;
     private final int assignId;
     private final long targetBucketRowNumber;
+    private final long targetBucketSize;
     private final int maxBucketsNum;
     private int maxBucketId;
 
@@ -59,6 +60,28 @@ public class HashBucketAssigner implements BucketAssigner {
             int assignId,
             long targetBucketRowNumber,
             int maxBucketsNum) {
+        this(
+                snapshotManager,
+                commitUser,
+                indexFileHandler,
+                numChannels,
+                numAssigners,
+                assignId,
+                targetBucketRowNumber,
+                0L,
+                maxBucketsNum);
+    }
+
+    public HashBucketAssigner(
+            SnapshotManager snapshotManager,
+            String commitUser,
+            IndexFileHandler indexFileHandler,
+            int numChannels,
+            int numAssigners,
+            int assignId,
+            long targetBucketRowNumber,
+            long targetBucketSize,
+            int maxBucketsNum) {
         this.snapshotManager = snapshotManager;
         this.commitUser = commitUser;
         this.indexFileHandler = indexFileHandler;
@@ -66,6 +89,7 @@ public class HashBucketAssigner implements BucketAssigner {
         this.numAssigners = numAssigners;
         this.assignId = assignId;
         this.targetBucketRowNumber = targetBucketRowNumber;
+        this.targetBucketSize = targetBucketSize;
         this.partitionIndex = new HashMap<>();
         this.maxBucketsNum = maxBucketsNum;
     }
@@ -173,6 +197,7 @@ public class HashBucketAssigner implements BucketAssigner {
                 indexFileHandler,
                 partition,
                 targetBucketRowNumber,
+                targetBucketSize,
                 (hash) -> computeAssignId(partitionHash, hash) == assignId,
                 this::isMyBucket);
     }
