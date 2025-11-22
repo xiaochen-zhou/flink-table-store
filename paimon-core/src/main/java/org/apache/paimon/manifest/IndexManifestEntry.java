@@ -59,24 +59,36 @@ public class IndexManifestEntry {
                                     7,
                                     "_DELETIONS_VECTORS_RANGES",
                                     new ArrayType(true, DeletionVectorMeta.SCHEMA)),
-                            new DataField(8, "_EXTERNAL_PATH", newStringType(true))));
+                            new DataField(8, "_EXTERNAL_PATH", newStringType(true)),
+                            new DataField(9, "_BUCKET_SIZE", new BigIntType(true))));
 
     private final FileKind kind;
     private final BinaryRow partition;
     private final int bucket;
     private final IndexFileMeta indexFile;
+    private final Long bucketSize;
 
     public IndexManifestEntry(
             FileKind kind, BinaryRow partition, int bucket, IndexFileMeta indexFile) {
+        this(kind, partition, bucket, indexFile, null);
+    }
+
+    public IndexManifestEntry(
+            FileKind kind,
+            BinaryRow partition,
+            int bucket,
+            IndexFileMeta indexFile,
+            Long bucketSize) {
         this.kind = kind;
         this.partition = partition;
         this.bucket = bucket;
         this.indexFile = indexFile;
+        this.bucketSize = bucketSize;
     }
 
     public IndexManifestEntry toDeleteEntry() {
         checkArgument(kind == FileKind.ADD);
-        return new IndexManifestEntry(FileKind.DELETE, partition, bucket, indexFile);
+        return new IndexManifestEntry(FileKind.DELETE, partition, bucket, indexFile, bucketSize);
     }
 
     public FileKind kind() {
@@ -95,6 +107,10 @@ public class IndexManifestEntry {
         return indexFile;
     }
 
+    public Long bucketSize() {
+        return bucketSize;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -107,12 +123,13 @@ public class IndexManifestEntry {
         return bucket == entry.bucket
                 && kind == entry.kind
                 && Objects.equals(partition, entry.partition)
-                && Objects.equals(indexFile, entry.indexFile);
+                && Objects.equals(indexFile, entry.indexFile)
+                && Objects.equals(bucketSize, entry.bucketSize);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, partition, bucket, indexFile);
+        return Objects.hash(kind, partition, bucket, indexFile, bucketSize);
     }
 
     @Override
@@ -126,6 +143,8 @@ public class IndexManifestEntry {
                 + bucket
                 + ", indexFile="
                 + indexFile
+                + ", bucketSize="
+                + bucketSize
                 + '}';
     }
 }

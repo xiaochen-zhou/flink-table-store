@@ -72,12 +72,12 @@ public class IndexFileExpireTableTest extends PrimaryKeyTableTestBase {
         expire.expireUntil(2, 3);
         checkIndexFiles(3);
         assertThat(indexFileSize()).isEqualTo(indexFileSize - 1);
-        assertThat(indexManifestSize()).isEqualTo(indexManifestSize - 1);
+        assertThat(indexManifestSize()).isEqualTo(indexManifestSize - 2);
 
         expire.expireUntil(3, 5);
         checkIndexFiles(5);
         assertThat(indexFileSize()).isEqualTo(indexFileSize - 2);
-        assertThat(indexManifestSize()).isEqualTo(indexManifestSize - 2);
+        assertThat(indexManifestSize()).isEqualTo(indexManifestSize - 3);
 
         expire.expireUntil(5, 7);
         checkIndexFiles(7);
@@ -99,7 +99,7 @@ public class IndexFileExpireTableTest extends PrimaryKeyTableTestBase {
         expire.expireUntil(1, 5);
         checkIndexFiles(5);
         assertThat(indexFileSize()).isEqualTo(indexFileSize - 1);
-        assertThat(indexManifestSize()).isEqualTo(indexManifestSize - 1);
+        assertThat(indexManifestSize()).isEqualTo(indexManifestSize - 2);
 
         expire.expireUntil(5, 7);
         checkIndexFiles(7);

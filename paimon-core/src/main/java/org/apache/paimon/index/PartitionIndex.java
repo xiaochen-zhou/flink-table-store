@@ -24,6 +24,8 @@ import org.apache.paimon.utils.Int2ShortHashMap;
 import org.apache.paimon.utils.IntIterator;
 import org.apache.paimon.utils.ListUtils;
 
+import javax.annotation.Nullable;
+
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -45,10 +47,14 @@ public class PartitionIndex {
 
     public final Map<Integer, Long> nonFullBucketInformation;
 
+    /** Bucket sizes loaded from bucket size index files. Null if not loaded. */
+    @Nullable public final Map<Integer, Long> bucketSizes;
+
     public final Set<Integer> totalBucketSet;
     public final List<Integer> totalBucketArray;
 
     private final long targetBucketRowNumber;
+    private final long targetBucketSize;
 
     public boolean accessed;
 
@@ -58,11 +64,30 @@ public class PartitionIndex {
             Int2ShortHashMap hash2Bucket,
             Map<Integer, Long> bucketInformation,
             long targetBucketRowNumber) {
+        this(hash2Bucket, bucketInformation, null, targetBucketRowNumber, 0L);
+    }
+
+    public PartitionIndex(
+            Int2ShortHashMap hash2Bucket,
+            Map<Integer, Long> bucketInformation,
+            @Nullable Map<Integer, Long> bucketSizes,
+            long targetBucketRowNumber) {
+        this(hash2Bucket, bucketInformation, bucketSizes, targetBucketRowNumber, 0L);
+    }
+
+    public PartitionIndex(
+            Int2ShortHashMap hash2Bucket,
+            Map<Integer, Long> bucketInformation,
+            @Nullable Map<Integer, Long> bucketSizes,
+            long targetBucketRowNumber,
+            long targetBucketSize) {
         this.hash2Bucket = hash2Bucket;
         this.nonFullBucketInformation = bucketInformation;
+        this.bucketSizes = bucketSizes;
         this.totalBucketSet = new LinkedHashSet<>(bucketInformation.keySet());
         this.totalBucketArray = new ArrayList<>(totalBucketSet);
         this.targetBucketRowNumber = targetBucketRowNumber;
+        this.targetBucketSize = targetBucketSize;
         this.lastAccessedCommitIdentifier = Long.MIN_VALUE;
         this.accessed = true;
     }
@@ -82,7 +107,17 @@ public class PartitionIndex {
             Map.Entry<Integer, Long> entry = iterator.next();
             Integer bucket = entry.getKey();
             Long number = entry.getValue();
-            if (number < targetBucketRowNumber) {
+
+            boolean exceedsRowLimit = number >= targetBucketRowNumber;
+            boolean exceedsSizeLimit = false;
+            if (targetBucketSize > 0 && bucketSizes != null) {
+                Long currentSize = bucketSizes.get(bucket);
+                if (currentSize != null && currentSize >= targetBucketSize) {
+                    exceedsSizeLimit = true;
+                }
+            }
+
+            if (!exceedsRowLimit && !exceedsSizeLimit) {
                 entry.setValue(number + 1);
                 hash2Bucket.put(hash, (short) bucket.intValue());
                 return bucket;
@@ -123,10 +158,25 @@ public class PartitionIndex {
             long targetBucketRowNumber,
             IntPredicate loadFilter,
             IntPredicate bucketFilter) {
-        List<IndexManifestEntry> files = indexFileHandler.scanEntries(HASH_INDEX, partition);
+        return loadIndex(
+                indexFileHandler, partition, targetBucketRowNumber, 0L, loadFilter, bucketFilter);
+    }
+
+    public static PartitionIndex loadIndex(
+            IndexFileHandler indexFileHandler,
+            BinaryRow partition,
+            long targetBucketRowNumber,
+            long targetBucketSize,
+            IntPredicate loadFilter,
+            IntPredicate bucketFilter) {
+        List<IndexManifestEntry> allIndexFiles =
+                indexFileHandler.scanEntries(HASH_INDEX, partition);
+
         Int2ShortHashMap.Builder mapBuilder = Int2ShortHashMap.builder();
         Map<Integer, Long> buckets = new HashMap<>();
-        for (IndexManifestEntry file : files) {
+        Map<Integer, Long> bucketSizes = targetBucketSize > 0 ? new HashMap<>() : null;
+
+        for (IndexManifestEntry file : allIndexFiles) {
             try (IntIterator iterator =
                     indexFileHandler
                             .hashIndex(file.partition(), file.bucket())
@@ -149,7 +199,16 @@ public class PartitionIndex {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
+
+            if (bucketSizes != null && bucketFilter.test(file.bucket())) {
+                Long size = file.bucketSize();
+                if (size != null) {
+                    bucketSizes.put(file.bucket(), size);
+                }
+            }
         }
-        return new PartitionIndex(mapBuilder.build(), buckets, targetBucketRowNumber);
+
+        return new PartitionIndex(
+                mapBuilder.build(), buckets, bucketSizes, targetBucketRowNumber, targetBucketSize);
     }
 }
