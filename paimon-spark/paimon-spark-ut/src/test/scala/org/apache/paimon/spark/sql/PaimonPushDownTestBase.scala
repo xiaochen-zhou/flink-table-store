@@ -87,6 +87,101 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
     checkAnswer(spark.sql(q), Row(1, "a", "p1") :: Row(2, "b", "p1") :: Row(3, "c", "p2") :: Nil)
   }
 
+  test(s"Paimon push down: apply CONCAT") {
+    // Spark support push down CONCAT since Spark 3.4.
+    if (gteqSpark3_4) {
+      withTable("t") {
+        sql(
+          """
+            |CREATE TABLE t (id int, value int, year STRING, month STRING, day STRING, hour STRING)
+            |using paimon
+            |PARTITIONED BY (year, month, day, hour)
+            |""".stripMargin)
+
+        sql("""
+              |INSERT INTO t values
+              |(1, 100, '2024', '07', '15', '21'),
+              |(2, 200, '2025', '07', '15', '21'),
+              |(3, 300, '2025', '07', '16', '22'),
+              |(4, 400, '2025', '07', '16', '23'),
+              |(5, 440, '2025', '07', '16', '23'),
+              |(6, 500, '2025', '07', '17', '00'),
+              |(7, 600, '2025', '07', '17', '02')
+              |""".stripMargin)
+
+        val q =
+          """
+            |SELECT * FROM t
+            |WHERE CONCAT(year,'-',month,'-',day,'-',hour) BETWEEN '2025-07-16-21' AND '2025-07-17-01'
+            |ORDER BY id
+            |""".stripMargin
+        assert(!checkFilterExists(q))
+
+        checkAnswer(
+          spark.sql(q),
+          Seq(
+            Row(3, 300, "2025", "07", "16", "22"),
+            Row(4, 400, "2025", "07", "16", "23"),
+            Row(5, 440, "2025", "07", "16", "23"),
+            Row(6, 500, "2025", "07", "17", "00"))
+        )
+      }
+    }
+  }
+
+  test(s"Paimon push down: apply UPPER") {
+    // Spark support push down UPPER since Spark 3.4.
+    if (gteqSpark3_4) {
+      withTable("t") {
+        sql("""
+              |CREATE TABLE t (id int, value int, dt STRING)
+              |using paimon
+              |PARTITIONED BY (dt)
+              |""".stripMargin)
+
+        sql("""
+              |INSERT INTO t values
+              |(1, 100, 'hello')
+              |""".stripMargin)
+
+        val q =
+          """
+            |SELECT * FROM t
+            |WHERE UPPER(dt) = 'HELLO'
+            |""".stripMargin
+        assert(!checkFilterExists(q))
+
+        checkAnswer(
+          spark.sql(q),
+          Seq(Row(1, 100, "hello"))
+        )
+      }
+    }
+  }
+
+  test(s"Paimon push down: apply CAST") {
+    if (gteqSpark3_4) {
+      withSparkSQLConf("spark.sql.ansi.enabled" -> "true") {
+        withTable("t") {
+          sql("""
+                |CREATE TABLE t (id int, value int, dt STRING)
+                |using paimon
+                |PARTITIONED BY (dt)
+                |""".stripMargin)
+
+          sql("""
+                |INSERT INTO t values
+                |(1, 100, '1')
+                |""".stripMargin)
+
+          val q = "SELECT * FROM t WHERE dt = 1"
+          assert(!checkFilterExists(q))
+          checkAnswer(sql(q), Seq(Row(1, 100, "1")))
+        }
+      }
+    }
+  }
+
   test("Paimon pushDown: limit for append-only tables with deletion vector") {
     withTable("dv_test") {
       spark.sql(
@@ -120,12 +215,12 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
     val scanBuilder = getScanBuilder()
     Assertions.assertTrue(scanBuilder.isInstanceOf[SupportsPushDownLimit])
 
-    val dataSplitsWithoutLimit = scanBuilder.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithoutLimit = scanBuilder.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertTrue(dataSplitsWithoutLimit.length >= 2)
 
     // It still returns false even it can push down limit.
     Assertions.assertFalse(scanBuilder.asInstanceOf[SupportsPushDownLimit].pushLimit(1))
-    val dataSplitsWithLimit = scanBuilder.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithLimit = scanBuilder.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertEquals(1, dataSplitsWithLimit.length)
 
     Assertions.assertEquals(1, spark.sql("SELECT * FROM T LIMIT 1").count())
@@ -145,7 +240,7 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
     Assertions.assertTrue(scanBuilder.isInstanceOf[SupportsPushDownLimit])
 
     // Case 1: All dataSplits is rawConvertible.
-    val dataSplitsWithoutLimit = scanBuilder.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithoutLimit = scanBuilder.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertEquals(4, dataSplitsWithoutLimit.length)
     // All dataSplits is rawConvertible.
     dataSplitsWithoutLimit.foreach(
@@ -155,19 +250,19 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
 
     // It still returns false even it can push down limit.
     Assertions.assertFalse(scanBuilder.asInstanceOf[SupportsPushDownLimit].pushLimit(1))
-    val dataSplitsWithLimit = scanBuilder.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithLimit = scanBuilder.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertEquals(1, dataSplitsWithLimit.length)
     Assertions.assertEquals(1, spark.sql("SELECT * FROM T LIMIT 1").count())
 
     Assertions.assertFalse(scanBuilder.asInstanceOf[SupportsPushDownLimit].pushLimit(2))
-    val dataSplitsWithLimit1 = scanBuilder.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithLimit1 = scanBuilder.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertEquals(2, dataSplitsWithLimit1.length)
     Assertions.assertEquals(2, spark.sql("SELECT * FROM T LIMIT 2").count())
 
     // Case 2: Update 2 rawConvertible dataSplits to convert to nonRawConvertible.
     spark.sql("INSERT INTO T VALUES (1, 'a2', '11'), (2, 'b2', '22')")
     val scanBuilder2 = getScanBuilder()
-    val dataSplitsWithoutLimit2 = scanBuilder2.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithoutLimit2 = scanBuilder2.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertEquals(4, dataSplitsWithoutLimit2.length)
     // Now, we have 4 dataSplits, and 2 dataSplit is nonRawConvertible, 2 dataSplit is rawConvertible.
     Assertions.assertEquals(
@@ -176,13 +271,13 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
 
     // Return 2 dataSplits.
     Assertions.assertFalse(scanBuilder2.asInstanceOf[SupportsPushDownLimit].pushLimit(2))
-    val dataSplitsWithLimit2 = scanBuilder2.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithLimit2 = scanBuilder2.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertEquals(2, dataSplitsWithLimit2.length)
     Assertions.assertEquals(2, spark.sql("SELECT * FROM T LIMIT 2").count())
 
     // 2 dataSplits cannot meet the limit requirement, so need to scan all dataSplits.
     Assertions.assertFalse(scanBuilder2.asInstanceOf[SupportsPushDownLimit].pushLimit(3))
-    val dataSplitsWithLimit22 = scanBuilder2.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithLimit22 = scanBuilder2.build().asInstanceOf[PaimonScan].inputSplits
     // Need to scan all dataSplits.
     Assertions.assertEquals(4, dataSplitsWithLimit22.length)
     Assertions.assertEquals(3, spark.sql("SELECT * FROM T LIMIT 3").count())
@@ -190,7 +285,7 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
     // Case 3: Update the remaining 2 rawConvertible dataSplits to make all dataSplits is nonRawConvertible.
     spark.sql("INSERT INTO T VALUES (3, 'c', '11'), (4, 'd', '22')")
     val scanBuilder3 = getScanBuilder()
-    val dataSplitsWithoutLimit3 = scanBuilder3.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithoutLimit3 = scanBuilder3.build().asInstanceOf[PaimonScan].inputSplits
     Assertions.assertEquals(4, dataSplitsWithoutLimit3.length)
 
     // All dataSplits is nonRawConvertible.
@@ -200,7 +295,7 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
       })
 
     Assertions.assertFalse(scanBuilder3.asInstanceOf[SupportsPushDownLimit].pushLimit(1))
-    val dataSplitsWithLimit3 = scanBuilder3.build().asInstanceOf[PaimonScan].getOriginSplits
+    val dataSplitsWithLimit3 = scanBuilder3.build().asInstanceOf[PaimonScan].inputSplits
     // Need to scan all dataSplits.
     Assertions.assertEquals(4, dataSplitsWithLimit3.length)
     Assertions.assertEquals(1, spark.sql("SELECT * FROM T LIMIT 1").count())
@@ -226,12 +321,12 @@ abstract class PaimonPushDownTestBase extends PaimonSparkTestBase {
               sql("DELETE FROM T WHERE id % 13 = 0")
               Assertions.assertEquals(100, spark.sql("SELECT * FROM T LIMIT 100").count())
 
-              val withoutLimit = getScanBuilder().build().asInstanceOf[PaimonScan].getOriginSplits
+              val withoutLimit = getScanBuilder().build().asInstanceOf[PaimonScan].inputSplits
               assert(withoutLimit.length == 10)
 
               val scanBuilder = getScanBuilder().asInstanceOf[SupportsPushDownLimit]
               scanBuilder.pushLimit(1)
-              val withLimit = scanBuilder.build().asInstanceOf[PaimonScan].getOriginSplits
+              val withLimit = scanBuilder.build().asInstanceOf[PaimonScan].inputSplits
               if (deletionVectorsEnabled || !primaryKeyTable) {
                 assert(withLimit.length == 1)
               } else {

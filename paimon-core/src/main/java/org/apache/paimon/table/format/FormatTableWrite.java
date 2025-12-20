@@ -24,7 +24,6 @@ import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.data.InternalRow;
 import org.apache.paimon.disk.IOManager;
 import org.apache.paimon.fs.FileIO;
-import org.apache.paimon.fs.TwoPhaseOutputStream;
 import org.apache.paimon.io.BundleRecords;
 import org.apache.paimon.memory.MemoryPoolFactory;
 import org.apache.paimon.metrics.MetricRegistry;
@@ -34,6 +33,7 @@ import org.apache.paimon.table.sink.FormatTableRowPartitionKeyExtractor;
 import org.apache.paimon.table.sink.TableWrite;
 import org.apache.paimon.types.DataField;
 import org.apache.paimon.types.RowType;
+import org.apache.paimon.utils.ProjectedRow;
 
 import javax.annotation.Nullable;
 
@@ -43,13 +43,14 @@ import java.util.stream.Collectors;
 /** {@link TableWrite} implementation for format table. */
 public class FormatTableWrite implements BatchTableWrite {
 
-    private FileIO fileIO;
     private RowType rowType;
     private final FormatTableFileWriter write;
     private final FormatTableRowPartitionKeyExtractor partitionKeyExtractor;
 
     private final int[] notNullFieldIndex;
     private final @Nullable DefaultValueRow defaultValueRow;
+    private final ProjectedRow projectedRow;
+    private final RowType writeRowType;
 
     public FormatTableWrite(
             FileIO fileIO,
@@ -57,9 +58,7 @@ public class FormatTableWrite implements BatchTableWrite {
             CoreOptions options,
             RowType partitionType,
             List<String> partitionKeys) {
-        this.fileIO = fileIO;
         this.rowType = rowType;
-        this.write = new FormatTableFileWriter(fileIO, rowType, options, partitionType);
         this.partitionKeyExtractor =
                 new FormatTableRowPartitionKeyExtractor(rowType, partitionKeys);
         List<String> notNullColumnNames =
@@ -69,12 +68,13 @@ public class FormatTableWrite implements BatchTableWrite {
                         .collect(Collectors.toList());
         this.notNullFieldIndex = rowType.getFieldIndices(notNullColumnNames);
         this.defaultValueRow = DefaultValueRow.create(rowType);
-    }
-
-    @Override
-    public BatchTableWrite withWriteType(RowType writeType) {
-        write.withWriteType(writeType);
-        return this;
+        this.writeRowType =
+                rowType.project(
+                        rowType.getFieldNames().stream()
+                                .filter(name -> !partitionType.getFieldNames().contains(name))
+                                .collect(Collectors.toList()));
+        this.projectedRow = ProjectedRow.from(writeRowType, rowType);
+        this.write = new FormatTableFileWriter(fileIO, writeRowType, options, partitionType);
     }
 
     @Override
@@ -94,37 +94,12 @@ public class FormatTableWrite implements BatchTableWrite {
         }
         row = defaultValueRow == null ? row : defaultValueRow.replaceRow(row);
         BinaryRow partition = partitionKeyExtractor.partition(row);
-        write.write(partition, row);
+        write.write(partition, projectedRow.replaceRow(row));
     }
 
     @Override
     public List<CommitMessage> prepareCommit() throws Exception {
         return write.prepareCommit();
-    }
-
-    public void commit(List<CommitMessage> commitMessages) throws Exception {
-        applyCommitterAction(commitMessages, TwoPhaseOutputStream.Committer::commit);
-    }
-
-    public void discard(List<CommitMessage> commitMessages) throws Exception {
-        applyCommitterAction(commitMessages, TwoPhaseOutputStream.Committer::discard);
-    }
-
-    private interface CommitterAction {
-        void apply(TwoPhaseOutputStream.Committer committer, FileIO fileIO) throws Exception;
-    }
-
-    private void applyCommitterAction(List<CommitMessage> commitMessages, CommitterAction action)
-            throws Exception {
-        for (CommitMessage commitMessage : commitMessages) {
-            if (commitMessage instanceof TwoPhaseCommitMessage) {
-                TwoPhaseCommitMessage twoPhaseCommitMessage = (TwoPhaseCommitMessage) commitMessage;
-                action.apply(twoPhaseCommitMessage.getCommitter(), this.fileIO);
-            } else {
-                throw new RuntimeException(
-                        "Unsupported commit message type: " + commitMessage.getClass().getName());
-            }
-        }
     }
 
     @Override
@@ -143,8 +118,13 @@ public class FormatTableWrite implements BatchTableWrite {
     }
 
     @Override
-    public TableWrite withIOManager(IOManager ioManager) {
+    public BatchTableWrite withIOManager(IOManager ioManager) {
         return this;
+    }
+
+    @Override
+    public BatchTableWrite withWriteType(RowType writeType) {
+        throw new UnsupportedOperationException();
     }
 
     @Override

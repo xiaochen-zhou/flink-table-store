@@ -46,6 +46,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -66,8 +67,8 @@ import static org.apache.paimon.utils.Preconditions.checkArgument;
  * Every time a file is rolled, the writer will close the current normal data file and blob data files,
  * so one normal data file may correspond to multiple blob data files.
  *
- * Normal file1: f1.parquet may including (b1.blob, b2.blob, b3.blob)
- * Normal file2: f1-2.parquet may including (b4.blob, b5.blob)
+ * Normal file1: f1.parquet may include (b1.blob, b2.blob, b3.blob)
+ * Normal file2: f1-2.parquet may include (b4.blob, b5.blob)
  *
  * </pre>
  */
@@ -85,9 +86,10 @@ public class RollingBlobFileWriter implements RollingFileWriter<InternalRow, Dat
     private final Supplier<
                     PeojectedFileWriter<SingleFileWriter<InternalRow, DataFileMeta>, DataFileMeta>>
             writerFactory;
-    private final PeojectedFileWriter<
-                    RollingFileWriterImpl<InternalRow, DataFileMeta>, List<DataFileMeta>>
-            blobWriter;
+    private final Supplier<
+                    PeojectedFileWriter<
+                            RollingFileWriterImpl<InternalRow, DataFileMeta>, List<DataFileMeta>>>
+            blobWriterFactory;
     private final long targetFileSize;
     private final long blobTargetFileSize;
 
@@ -96,6 +98,9 @@ public class RollingBlobFileWriter implements RollingFileWriter<InternalRow, Dat
     private final List<DataFileMeta> results;
     private PeojectedFileWriter<SingleFileWriter<InternalRow, DataFileMeta>, DataFileMeta>
             currentWriter;
+    private PeojectedFileWriter<
+                    RollingFileWriterImpl<InternalRow, DataFileMeta>, List<DataFileMeta>>
+            blobWriter;
     private long recordCount = 0;
     private boolean closed = false;
 
@@ -144,18 +149,19 @@ public class RollingBlobFileWriter implements RollingFileWriter<InternalRow, Dat
                         statsDenseStore);
 
         // Initialize blob writer
-        this.blobWriter =
-                createBlobWriter(
-                        fileIO,
-                        schemaId,
-                        blobType,
-                        writeSchema,
-                        pathFactory,
-                        seqNumCounter,
-                        fileSource,
-                        asyncFileWrite,
-                        statsDenseStore,
-                        blobTargetFileSize);
+        this.blobWriterFactory =
+                () ->
+                        createBlobWriter(
+                                fileIO,
+                                schemaId,
+                                blobType,
+                                writeSchema,
+                                pathFactory,
+                                seqNumCounter,
+                                fileSource,
+                                asyncFileWrite,
+                                statsDenseStore,
+                                blobTargetFileSize);
     }
 
     /** Creates a factory for normal data writers. */
@@ -265,6 +271,9 @@ public class RollingBlobFileWriter implements RollingFileWriter<InternalRow, Dat
             if (currentWriter == null) {
                 currentWriter = writerFactory.get();
             }
+            if (blobWriter == null) {
+                blobWriter = blobWriterFactory.get();
+            }
             currentWriter.write(row);
             blobWriter.write(row);
             recordCount++;
@@ -322,7 +331,10 @@ public class RollingBlobFileWriter implements RollingFileWriter<InternalRow, Dat
         for (FileWriterAbortExecutor abortExecutor : closedWriters) {
             abortExecutor.abort();
         }
-        blobWriter.abort();
+        if (blobWriter != null) {
+            blobWriter.abort();
+            blobWriter = null;
+        }
     }
 
     /** Checks if the current file should be rolled based on size and record count. */
@@ -369,8 +381,13 @@ public class RollingBlobFileWriter implements RollingFileWriter<InternalRow, Dat
 
     /** Closes the blob writer and processes blob metadata with appropriate tags. */
     private List<DataFileMeta> closeBlobWriter() throws IOException {
+        if (blobWriter == null) {
+            return Collections.emptyList();
+        }
         blobWriter.close();
-        return blobWriter.result();
+        List<DataFileMeta> results = blobWriter.result();
+        blobWriter = null;
+        return results;
     }
 
     /** Validates that the row counts match between main and blob files. */

@@ -38,9 +38,11 @@ import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.schema.SchemaManager;
 import org.apache.paimon.schema.TableSchema;
 import org.apache.paimon.table.source.ScanMode;
+import org.apache.paimon.types.RowType;
 import org.apache.paimon.utils.BiFilter;
 import org.apache.paimon.utils.Filter;
 import org.apache.paimon.utils.Pair;
+import org.apache.paimon.utils.Range;
 import org.apache.paimon.utils.SnapshotManager;
 
 import javax.annotation.Nullable;
@@ -89,6 +91,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
 
     private ScanMetrics scanMetrics = null;
     private boolean dropStats;
+    @Nullable protected List<Range> rowRanges;
 
     public AbstractFileStoreScan(
             ManifestsReader manifestsReader,
@@ -237,6 +240,17 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
         return this;
     }
 
+    @Override
+    public FileStoreScan withRowRanges(List<Range> rowRanges) {
+        this.rowRanges = rowRanges;
+        return this;
+    }
+
+    @Override
+    public FileStoreScan withReadType(RowType readType) {
+        return this;
+    }
+
     @Nullable
     @Override
     public Integer parallelism() {
@@ -254,6 +268,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
         ManifestsReader.Result manifestsResult = readManifests();
         Snapshot snapshot = manifestsResult.snapshot;
         List<ManifestFileMeta> manifests = manifestsResult.filteredManifests;
+        manifests = postFilterManifests(manifests);
 
         Iterator<ManifestEntry> iterator = readManifestEntries(manifests, false);
         List<ManifestEntry> files = new ArrayList<>();
@@ -261,7 +276,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
             files.add(iterator.next());
         }
 
-        files = postFilter(files);
+        files = postFilterManifestEntries(files);
 
         if (wholeBucketFilterEnabled()) {
             // We group files by bucket here, and filter them by the whole bucket filter.
@@ -294,6 +309,7 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
             scanMetrics.reportScan(
                     new ScanStats(
                             scanDuration,
+                            snapshot == null ? 0 : snapshot.id(),
                             manifests.size(),
                             allDataFiles - result.size(),
                             result.size()));
@@ -430,7 +446,13 @@ public abstract class AbstractFileStoreScan implements FileStoreScan {
     /** Note: Keep this thread-safe. */
     protected abstract boolean filterByStats(ManifestEntry entry);
 
-    protected abstract List<ManifestEntry> postFilter(List<ManifestEntry> entries);
+    protected List<ManifestFileMeta> postFilterManifests(List<ManifestFileMeta> manifests) {
+        return manifests;
+    }
+
+    protected List<ManifestEntry> postFilterManifestEntries(List<ManifestEntry> entries) {
+        return entries;
+    }
 
     protected boolean wholeBucketFilterEnabled() {
         return false;

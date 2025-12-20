@@ -22,6 +22,7 @@ import org.apache.paimon.CoreOptions
 import org.apache.paimon.CoreOptions.BucketFunctionType
 import org.apache.paimon.options.Options
 import org.apache.paimon.spark.catalog.functions.BucketFunction
+import org.apache.paimon.spark.scan.PaimonSplitScanBuilder
 import org.apache.paimon.spark.schema.PaimonMetadataColumn
 import org.apache.paimon.spark.util.OptionUtils
 import org.apache.paimon.spark.write.{PaimonV2WriteBuilder, PaimonWriteBuilder}
@@ -45,7 +46,7 @@ abstract class PaimonSparkTableBase(val table: Table)
 
   lazy val coreOptions = new CoreOptions(table.options())
 
-  private lazy val useV2Write: Boolean = {
+  lazy val useV2Write: Boolean = {
     val v2WriteConfigured = OptionUtils.useV2Write()
     v2WriteConfigured && supportsV2Write
   }
@@ -56,7 +57,8 @@ abstract class PaimonSparkTableBase(val table: Table)
         case storeTable: FileStoreTable =>
           storeTable.bucketMode() match {
             case HASH_FIXED => BucketFunction.supportsTable(storeTable)
-            case BUCKET_UNAWARE | POSTPONE_MODE => true
+            case BUCKET_UNAWARE => true
+            case POSTPONE_MODE if !coreOptions.postponeBatchWriteFixedBucket() => true
             case _ => false
           }
 
