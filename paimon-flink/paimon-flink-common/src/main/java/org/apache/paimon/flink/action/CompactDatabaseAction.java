@@ -152,11 +152,11 @@ public class CompactDatabaseAction extends ActionBase {
                     catalog.listDatabases(
                             databaseName -> databasePattern.matcher(databaseName).matches());
             for (String databaseName : databases) {
-                Filter<String> tableFilter =
+                Filter<String> tableNameFilter =
                         tblName ->
                                 shouldCompactionTable(
                                         String.format("%s.%s", databaseName, tblName));
-                List<String> tables = catalog.listTables(databaseName, tableFilter);
+                List<String> tables = catalog.listTables(databaseName, tableNameFilter);
                 for (String tableName : tables) {
                     Table table = catalog.getTable(Identifier.create(databaseName, tableName));
                     if (!(table instanceof FileStoreTable)) {

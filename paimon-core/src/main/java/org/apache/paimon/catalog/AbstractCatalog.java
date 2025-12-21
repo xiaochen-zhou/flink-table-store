@@ -42,8 +42,8 @@ import org.apache.paimon.table.Table;
 import org.apache.paimon.table.TableSnapshot;
 import org.apache.paimon.table.sink.BatchTableCommit;
 import org.apache.paimon.table.system.SystemTableLoader;
-import org.apache.paimon.utils.SnapshotNotExistException;
 import org.apache.paimon.utils.Filter;
+import org.apache.paimon.utils.SnapshotNotExistException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -245,7 +245,7 @@ public abstract class AbstractCatalog implements Catalog {
     }
 
     @Override
-    public List<String> listTables(String databaseName, Filter<String> filter)
+    public List<String> listTables(String databaseName, Filter<String> tableNameFilter)
             throws DatabaseNotExistException {
         if (isSystemDatabase(databaseName)) {
             return SystemTableLoader.loadGlobalTableNames();
@@ -253,7 +253,9 @@ public abstract class AbstractCatalog implements Catalog {
 
         // check db exists
         getDatabase(databaseName);
-        return listTablesImpl(databaseName, filter).stream().sorted().collect(Collectors.toList());
+        return listTablesImpl(databaseName, tableNameFilter).stream()
+                .sorted()
+                .collect(Collectors.toList());
     }
 
     @Override

@@ -274,10 +274,10 @@ public class HiveCatalog extends AbstractCatalog {
     }
 
     @Override
-    public List<String> listDatabases(Filter<String> nameFilter) {
+    public List<String> listDatabases(Filter<String> dbNameFilter) {
         try {
             return clients.run(IMetaStoreClient::getAllDatabases).stream()
-                    .filter(nameFilter::test)
+                    .filter(dbNameFilter::test)
                     .collect(Collectors.toList());
         } catch (TException e) {
             throw new RuntimeException("Failed to list all databases", e);
@@ -679,11 +679,11 @@ public class HiveCatalog extends AbstractCatalog {
     }
 
     @Override
-    protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
+    protected List<String> listTablesImpl(String databaseName, Filter<String> tableNameFilter) {
         try {
             List<String> tableNames =
                     clients.run(client -> client.getAllTables(databaseName)).stream()
-                            .filter(filter::test)
+                            .filter(tableNameFilter::test)
                             .collect(Collectors.toList());
             int batchSize = getBatchGetTableSize();
             List<Table> hmsTables =

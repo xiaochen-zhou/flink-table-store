@@ -86,13 +86,13 @@ public abstract class MultiTableScanBase<T> implements AutoCloseable {
                         databaseName -> databasePattern.matcher(databaseName).matches());
 
         for (String databaseName : databases) {
-            Filter<String> tableFilter =
+            Filter<String> tableNameFilter =
                     tblName -> {
                         Identifier identifier = Identifier.create(databaseName, tblName);
                         return shouldCompactTable(identifier, includingPattern, excludingPattern)
                                 && (!checkTableScanned(identifier));
                     };
-            List<String> tables = catalog.listTables(databaseName, tableFilter);
+            List<String> tables = catalog.listTables(databaseName, tableNameFilter);
             for (String tableName : tables) {
                 Identifier identifier = Identifier.create(databaseName, tableName);
                 Table table = catalog.getTable(identifier);

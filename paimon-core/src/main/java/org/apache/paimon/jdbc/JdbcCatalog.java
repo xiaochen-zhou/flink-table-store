@@ -61,6 +61,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.paimon.jdbc.JdbcCatalogLock.acquireTimeout;
 import static org.apache.paimon.jdbc.JdbcCatalogLock.checkMaxSleep;
@@ -113,7 +114,6 @@ public class JdbcCatalog extends AbstractCatalog {
         return connections;
     }
 
-    /** Initialize catalog tables. */
     private void initializeCatalogTablesIfNeed() throws SQLException, InterruptedException {
         String uri = options.get(CatalogOptions.URI.key());
         Preconditions.checkNotNull(uri, "JDBC connection URI is required");
@@ -161,6 +161,12 @@ public class JdbcCatalog extends AbstractCatalog {
 
     @Override
     public List<String> listDatabases() {
+        return listDatabases(Filter.alwaysTrue());
+    }
+
+    @Override
+    public List<String> listDatabases(Filter<String> dbNamefilter) {
+
         List<String> databases = Lists.newArrayList();
         databases.addAll(
                 fetch(
@@ -173,12 +179,12 @@ public class JdbcCatalog extends AbstractCatalog {
                         row -> row.getString(JdbcUtils.DATABASE_NAME),
                         JdbcUtils.LIST_ALL_PROPERTY_DATABASES_SQL,
                         catalogKey));
-        return databases.stream().distinct().collect(Collectors.toList());
-    }
+        Stream<String> dbDistinctStream = databases.stream().distinct();
 
-    @Override
-    public List<String> listDatabases(Filter<String> filter) {
-        return listDatabases().stream().filter(filter::test).collect(Collectors.toList());
+        if (Filter.alwaysTrue().equals(dbNamefilter)) {
+            return dbDistinctStream.collect(Collectors.toList());
+        }
+        return dbDistinctStream.filter(dbNamefilter::test).collect(Collectors.toList());
     }
 
     @Override
@@ -259,19 +265,23 @@ public class JdbcCatalog extends AbstractCatalog {
 
     @Override
     protected List<String> listTablesImpl(String databaseName) {
-        return fetch(
-                row -> row.getString(JdbcUtils.TABLE_NAME),
-                JdbcUtils.LIST_TABLES_SQL,
-                catalogKey,
-                databaseName);
+        return listTablesImpl(databaseName, Filter.alwaysTrue());
     }
 
     @Override
-    protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
-        if (filter.equals(Filter.alwaysTrue())) {
-            return listTablesImpl(databaseName);
+    protected List<String> listTablesImpl(String databaseName, Filter<String> tableNamefilter) {
+
+        List<String> allTableNames =
+                fetch(
+                        row -> row.getString(JdbcUtils.TABLE_NAME),
+                        JdbcUtils.LIST_TABLES_SQL,
+                        catalogKey,
+                        databaseName);
+
+        if (Filter.alwaysTrue().equals(tableNamefilter)) {
+            return allTableNames;
         }
-        throw new UnsupportedOperationException("listTables with filter is not supported.");
+        return allTableNames.stream().filter(tableNamefilter::test).collect(Collectors.toList());
     }
 
     @Override

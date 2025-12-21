@@ -32,8 +32,8 @@ import org.apache.paimon.schema.SchemaChange;
 import org.apache.paimon.table.Instant;
 import org.apache.paimon.table.Table;
 import org.apache.paimon.table.TableSnapshot;
-import org.apache.paimon.utils.SnapshotNotExistException;
 import org.apache.paimon.utils.Filter;
+import org.apache.paimon.utils.SnapshotNotExistException;
 import org.apache.paimon.view.View;
 import org.apache.paimon.view.ViewChange;
 
@@ -66,7 +66,7 @@ public interface Catalog extends AutoCloseable {
     /**
      * Get the names of all databases in this catalog.
      *
-     * @return a list of the names of all databases
+     * @return a list of the names of databases with name filter
      */
     List<String> listDatabases(Filter<String> nameFilter);
 
@@ -164,7 +164,8 @@ public interface Catalog extends AutoCloseable {
     Table getTable(Identifier identifier) throws TableNotExistException;
 
     /**
-     * Get names of all tables under this database. An empty list is returned if none exists.
+     * Get names of all tables under this database with name filter. An empty list is returned if
+     * none exists.
      *
      * <p>NOTE: System tables will not be listed.
      *

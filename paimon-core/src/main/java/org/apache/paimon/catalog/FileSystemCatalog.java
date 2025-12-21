@@ -119,7 +119,7 @@ public class FileSystemCatalog extends AbstractCatalog {
     protected List<String> listTablesImpl(String databaseName, Filter<String> filter) {
         return uncheck(
                 () -> {
-                    if (filter.equals(Filter.alwaysTrue())) {
+                    if (Filter.alwaysTrue().equals(filter)) {
                         return listTablesInFileSystem(newDatabasePath(databaseName));
                     }
                     return listTablesInFileSystem(newDatabasePath(databaseName), filter);
